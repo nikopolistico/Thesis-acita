@@ -1,7 +1,7 @@
 interface LoginBody {
   email: string
   password: string
-  role: 'student' | 'panelist' | 'admin'
+  role: 'student' | 'admin'
 }
 
 export default defineEventHandler(async (event) => {

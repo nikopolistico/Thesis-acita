@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LogOut, Menu, X } from '@lucide/vue'
+import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 
@@ -16,6 +16,7 @@ const emit = defineEmits<{
 }>()
 
 const isMobileOpen = ref(false)
+const isCollapsed = ref(false)
 const isLogoutConfirmOpen = ref(false)
 
 function select(key: string) {
@@ -38,25 +39,46 @@ function confirmLogout() {
     />
 
     <aside
-      class="fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 -translate-x-full flex-col border-r bg-background transition-transform duration-200 lg:static lg:translate-x-0"
-      :class="{ 'translate-x-0': isMobileOpen }"
+      class="fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 -translate-x-full flex-col border-r bg-background transition-all duration-200 lg:static lg:translate-x-0"
+      :class="[isMobileOpen ? 'translate-x-0' : '', isCollapsed ? 'lg:w-20' : 'lg:w-64']"
     >
-      <div class="flex items-center gap-2 border-b px-4 py-4">
+      <div class="flex items-center justify-between gap-2 border-b px-4 py-4">
         <NuxtLink to="/" class="flex items-center gap-2 font-semibold">
-          <span class="flex size-8 items-center justify-center rounded-full bg-white p-1 shadow-sm ring-1 ring-border">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1 shadow-sm ring-1 ring-border">
             <img src="~/assets/images/logo.png" alt="Caraga State University logo" class="size-full object-contain">
           </span>
-          <span class="text-sm leading-tight">
-            CCIS Thesis Scheduler
+          <span class="text-sm leading-tight" :class="isCollapsed && 'lg:hidden'">
+            CCIS Panelist Automation Assign
           </span>
         </NuxtLink>
+        <button
+          type="button"
+          class="shrink-0 text-muted-foreground hover:text-foreground lg:hidden"
+          aria-label="Close menu"
+          @click="isMobileOpen = false"
+        >
+          <X class="size-5" />
+        </button>
       </div>
 
-      <div class="flex items-center justify-between gap-2 border-b px-4 py-3">
-        <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <div class="flex items-center justify-between gap-2 border-b px-4 py-3" :class="isCollapsed && 'lg:justify-center'">
+        <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground" :class="isCollapsed && 'lg:hidden'">
           {{ props.title }}
         </p>
-        <ThemeToggle />
+        <div class="flex items-center gap-1">
+          <div :class="isCollapsed && 'lg:hidden'">
+            <ThemeToggle />
+          </div>
+          <button
+            type="button"
+            class="hidden shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:inline-flex"
+            :aria-label="isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+            @click="isCollapsed = !isCollapsed"
+          >
+            <PanelLeftOpen v-if="isCollapsed" class="size-4" />
+            <PanelLeftClose v-else class="size-4" />
+          </button>
+        </div>
       </div>
 
       <nav class="flex-1 space-y-1 overflow-y-auto p-3">
@@ -64,29 +86,35 @@ function confirmLogout() {
           v-for="item in navItems"
           :key="item.key"
           type="button"
+          :title="item.label"
           class="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors"
-          :class="active === item.key
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+          :class="[
+            active === item.key
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            isCollapsed && 'lg:justify-center lg:px-0',
+          ]"
           @click="select(item.key)"
         >
           <component :is="item.icon" class="size-4 shrink-0" />
-          {{ item.label }}
+          <span :class="isCollapsed && 'lg:hidden'">{{ item.label }}</span>
         </button>
       </nav>
 
       <div class="border-t p-3">
-        <p v-if="userEmail" class="truncate px-3 pb-2 text-xs text-muted-foreground">
+        <p v-if="userEmail" class="truncate px-3 pb-2 text-xs text-muted-foreground" :class="isCollapsed && 'lg:hidden'">
           {{ userEmail }}
         </p>
         <Dialog v-model:open="isLogoutConfirmOpen">
           <DialogTrigger as-child>
             <button
               type="button"
+              title="Log out"
               class="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              :class="isCollapsed && 'lg:justify-center lg:px-0'"
             >
               <LogOut class="size-4 shrink-0" />
-              Log out
+              <span :class="isCollapsed && 'lg:hidden'">Log out</span>
             </button>
           </DialogTrigger>
           <DialogContent class="max-w-sm">

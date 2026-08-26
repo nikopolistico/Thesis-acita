@@ -3,38 +3,36 @@ import {
   ArrowRight,
   Briefcase,
   Building2,
-  CalendarClock,
-  CalendarX2,
   ClipboardCheck,
   ClockAlert,
   FileSpreadsheet,
   GraduationCap,
+  Link as LinkIcon,
   TriangleAlert,
-  UserCheck,
+  UploadCloud,
   UserX,
-  UsersRound,
+  Users,
 } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 const painPoints = [
-  { icon: CalendarX2, text: 'Overlapping and conflicting defense schedules' },
-  { icon: FileSpreadsheet, text: 'Coordination relies on spreadsheets, printed postings, and informal messages' },
-  { icon: UserX, text: 'Panel members assigned by availability rather than actual expertise' },
-  { icon: ClockAlert, text: 'Topic-evaluator mismatches lead to delays and rescheduling' },
+  { icon: FileSpreadsheet, text: 'Thesis titles, document links, and adviser names scattered across spreadsheets and messages' },
+  { icon: UserX, text: 'No single, up-to-date record of who is advising which thesis' },
+  { icon: ClockAlert, text: 'Chairperson has to chase students individually to track submission status' },
 ]
 
 const objectives = [
   {
-    icon: CalendarClock,
-    title: 'Automate Thesis Scheduling',
-    description: 'Build a web platform that automates thesis defense scheduling, replacing manual spreadsheets and printed schedules.',
+    icon: UploadCloud,
+    title: 'Simple Thesis Submission',
+    description: 'Let students register and upload their thesis title, document link, and adviser name in one place.',
   },
   {
-    icon: UsersRound,
-    title: 'Expertise-Based Panel Assignment',
-    description: 'Integrate automatic panel assignment that matches each thesis title to faculty expertise, not just availability.',
+    icon: Users,
+    title: 'Centralized Chairperson View',
+    description: 'Give the chairperson a single dashboard listing every student and their submitted thesis details.',
   },
   {
     icon: ClipboardCheck,
@@ -44,10 +42,9 @@ const objectives = [
 ]
 
 const stakeholders = [
-  { icon: GraduationCap, title: 'Students', description: 'Receive clear, conflict-free defense schedules communicated well ahead of time.' },
-  { icon: UserCheck, title: 'Faculty & Panelists', description: 'Get organized assignments matched to their actual research and technical expertise.' },
-  { icon: Briefcase, title: 'Administrators', description: 'Spend far less time manually coordinating schedules and resolving conflicts.' },
-  { icon: Building2, title: 'The Institution', description: 'Supports CCIS’s digital transformation with a scalable, data-driven scheduling process.' },
+  { icon: GraduationCap, title: 'Students', description: 'Submit their thesis title, link, and adviser once and update it anytime.' },
+  { icon: Briefcase, title: 'The Chairperson', description: 'Sees every student’s submission status in one dashboard instead of chasing spreadsheets.' },
+  { icon: Building2, title: 'The Institution', description: 'Supports CCIS’s digital transformation with a simple, centralized submission record.' },
 ]
 </script>
 
@@ -57,7 +54,7 @@ const stakeholders = [
       <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
         <div class="flex items-center gap-2 font-semibold">
           <img src="~/assets/images/logo.png" alt="Caraga State University logo" class="size-8">
-          CCIS Thesis Scheduler
+          CCIS Panelist Automation Assign
         </div>
         <nav class="hidden items-center gap-6 text-sm text-muted-foreground sm:flex">
           <a href="#problem" class="hover:text-foreground">Problem</a>
@@ -76,10 +73,10 @@ const stakeholders = [
     <section class="mx-auto max-w-4xl px-4 py-24 text-center sm:px-6 sm:py-32">
       <Badge variant="secondary" class="mb-4">CCIS Thesis Defense System</Badge>
       <h1 class="text-4xl font-bold tracking-tight text-balance sm:text-6xl">
-        Automated Thesis Scheduling &amp; Expertise-Matched Panel Assignment
+        Simple Thesis Title, Link &amp; Adviser Submission
       </h1>
       <p class="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground text-pretty">
-        A web platform for the College of Computing and Information Sciences that replaces manual, spreadsheet-driven coordination with automated scheduling and panel assignments matched to faculty expertise.
+        A web platform for the College of Computing and Information Sciences where students register and upload their thesis title, document link, and adviser name, and the chairperson tracks every submission in one dashboard.
       </p>
       <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
         <Button as-child size="lg">
@@ -102,10 +99,10 @@ const stakeholders = [
             The Problem
           </Badge>
           <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">
-            Manual scheduling can't keep up with CCIS thesis defenses
+            Thesis submissions shouldn't live in scattered spreadsheets
           </h2>
           <p class="mt-4 text-muted-foreground text-pretty">
-            CCIS currently schedules thesis defenses manually using spreadsheets, printed schedules, and informal communication. As defenses pile up, this process breaks down into conflicts, overlapping slots, and delays — and panelists often end up assigned by who's free rather than who's the right fit for the topic.
+            CCIS currently tracks thesis titles, document links, and adviser assignments manually across spreadsheets and informal messages. As submissions pile up, the chairperson has no single, reliable place to see who has submitted what.
           </p>
         </div>
         <ul class="space-y-4">
@@ -145,13 +142,13 @@ const stakeholders = [
         <div class="mx-auto max-w-2xl text-center">
           <Badge variant="secondary" class="mb-4">Significance</Badge>
           <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">
-            Built for everyone in the thesis defense process
+            Built for students and the chairperson
           </h2>
           <p class="mt-4 text-muted-foreground text-pretty">
-            Automating scheduling and panel assignment creates value across the whole department.
+            A single, centralized submission record creates value across the whole department.
           </p>
         </div>
-        <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <Card v-for="person in stakeholders" :key="person.title">
             <CardContent class="pt-4 text-center">
               <div class="mx-auto mb-3 flex size-10 items-center justify-center rounded-lg bg-primary/10">
@@ -168,10 +165,10 @@ const stakeholders = [
     <section class="mx-auto max-w-6xl px-4 py-20 sm:px-6">
       <div class="flex flex-col items-center gap-6 rounded-2xl bg-primary px-8 py-16 text-center text-primary-foreground">
         <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">
-          Ready to modernize thesis defense scheduling?
+          Ready to centralize thesis submissions?
         </h2>
         <p class="max-w-xl text-primary-foreground/80 text-pretty">
-          Help CCIS move from spreadsheets to a coordinated, expertise-aware scheduling system.
+          Help CCIS move from scattered spreadsheets to a single, reliable thesis submission record.
         </p>
         <Button as-child size="lg" variant="secondary">
           <NuxtLink to="/register">

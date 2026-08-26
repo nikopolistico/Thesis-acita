@@ -25,25 +25,22 @@ const errorMessage = ref('')
 
 const roles = [
   { value: 'student', label: 'Student' },
-  { value: 'faculty', label: 'Faculty / Panelist' },
   { value: 'admin', label: 'Administrator' },
 ]
 
 const highlights = [
-  'Conflict-free defense schedules generated automatically',
-  'Panelists matched to your thesis topic and expertise',
-  'One dashboard for students, faculty, and administrators',
+  'Submit your thesis title, link, and adviser in one place',
+  'Track your submission status at a glance',
+  'One dashboard per program chairperson and their students',
 ]
 
 const roleNameByValue: Record<string, string> = {
   student: 'student',
-  faculty: 'panelist',
   admin: 'admin',
 }
 
 const dashboardByRole: Record<string, string> = {
   student: '/dashboard/student',
-  panelist: '/dashboard/panelist',
   admin: '/dashboard/admin',
 }
 
@@ -87,7 +84,7 @@ async function handleSubmit() {
         <span class="flex size-12 items-center justify-center rounded-full bg-white p-1.5 shadow-sm">
           <img src="~/assets/images/logo.png" alt="Caraga State University logo" class="size-full object-contain">
         </span>
-        CCIS Thesis Scheduler
+        CCIS Panelist Automation Assign
       </NuxtLink>
 
       <div class="relative z-10 max-w-md">
@@ -126,7 +123,7 @@ async function handleSubmit() {
         <span class="flex size-10 items-center justify-center rounded-full bg-white p-1 shadow-sm ring-1 ring-border">
           <img src="~/assets/images/logo.png" alt="Caraga State University logo" class="size-full object-contain">
         </span>
-        CCIS Thesis Scheduler
+        CCIS Panelist Automation Assign
       </NuxtLink>
 
       <div class="mx-auto w-full max-w-sm">

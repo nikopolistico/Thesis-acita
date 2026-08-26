@@ -3,7 +3,7 @@ import { StorageSerializers, useSessionStorage } from '@vueuse/core'
 export interface AuthUser {
   id: number
   email: string
-  role: 'admin' | 'panelist' | 'student'
+  role: 'admin' | 'student'
 }
 
 export function useAuthUser() {

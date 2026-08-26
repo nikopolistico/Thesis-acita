@@ -27,9 +27,9 @@ const isSubmitting = ref(false)
 const errorMessage = ref('')
 
 const highlights = [
-  'Students get clear, conflict-free schedules ahead of time',
-  'Faculty get assignments matched to their actual expertise',
-  'Admins spend far less time coordinating by hand',
+  'Upload your thesis title, document link, and adviser in one place',
+  'Update your submission anytime from your dashboard',
+  'Get Grok-suggested expertise areas for your topic instantly',
 ]
 
 async function handleSubmit() {
@@ -82,15 +82,15 @@ async function handleSubmit() {
         <span class="flex size-12 items-center justify-center rounded-full bg-white p-1.5 shadow-sm">
           <img src="~/assets/images/logo.png" alt="Caraga State University logo" class="size-full object-contain">
         </span>
-        CCIS Thesis Scheduler
+        CCIS Panelist Automation Assign
       </NuxtLink>
 
       <div class="relative z-10 max-w-md">
         <h1 class="text-3xl font-bold tracking-tight text-balance">
-          Join the platform built for every role in the process.
+          Create your student account.
         </h1>
         <p class="mt-4 text-primary-foreground/80 text-pretty">
-          Create an account to get a schedule, panel, or dashboard suited to you.
+          Register once, then submit your thesis title, link, and adviser from your dashboard.
         </p>
         <ul class="mt-8 space-y-3">
           <li v-for="item in highlights" :key="item" class="flex items-start gap-2.5 text-sm">
@@ -121,7 +121,7 @@ async function handleSubmit() {
         <span class="flex size-10 items-center justify-center rounded-full bg-white p-1 shadow-sm ring-1 ring-border">
           <img src="~/assets/images/logo.png" alt="Caraga State University logo" class="size-full object-contain">
         </span>
-        CCIS Thesis Scheduler
+        CCIS Panelist Automation Assign
       </NuxtLink>
 
       <div class="mx-auto w-full max-w-sm">
