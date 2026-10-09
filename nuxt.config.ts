@@ -9,7 +9,6 @@ export default defineNuxtConfig({
   css: ['~/assets/css/tailwind.css'],
   runtimeConfig: {
     supabaseServiceRoleKey: '',
-    groqApiKey: '',
     public: {
       supabaseUrl: '',
       supabaseAnonKey: '',

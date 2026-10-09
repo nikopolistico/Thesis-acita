@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import {
   AlertCircle,
+  ArrowRight,
+  Check,
   BookOpen,
   CheckCircle2,
   Clock,
-  Crown,
-  LayoutDashboard,
+    LayoutDashboard,
   Link as LinkIcon,
   Loader2,
   Pencil,
@@ -20,8 +21,8 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/componen
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { ExpertiseRecommendation } from '~/composables/useStudents'
-import type { StudentInformation, ThesisPanelMember, ThesisTitle } from '~/types/database'
+import type { PanelistOption, ThesisMatchResult } from '~/composables/useStudents'
+import type { Student, ThesisPanelMember, Thesis as ThesisType } from '~/types/database'
 
 definePageMeta({ middleware: 'dashboard', role: 'student' })
 
@@ -35,16 +36,30 @@ const authUser = useAuthUser()
 const students = useStudents()
 
 const isLoading = ref(true)
+const ready = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-const profile = ref<StudentInformation | null>(null)
-const thesis = ref<ThesisTitle | null>(null)
+const profile = ref<Student | null>(null)
+const thesis = ref<ThesisType | null>(null)
 const panel = ref<ThesisPanelMember[]>([])
+const panelistOptions = ref<PanelistOption[]>([])
 
-const panelChair = computed(() => panel.value.find(p => p.role_in_panel === 'chair') ?? null)
-const panelMembers = computed(() => panel.value.filter(p => p.role_in_panel === 'member'))
+const adviserName = computed(() => panelistOptions.value.find(p => p.panel_id === thesis.value?.adviser_id)?.full_name ?? '')
 
-const form = ref({ title: '', link: '', adviserName: '' })
+const panelComplete = computed(() =>
+  panel.value.some(p => p.role === 'chair') && panel.value.filter(p => p.role === 'member').length >= 2)
+
+const steps = computed(() => {
+  const done = [true, hasThesis.value, hasThesis.value && panelComplete.value]
+  const current = done.findIndex(d => !d)
+  return [
+    { label: 'Account created', hint: 'You are signed in', done: done[0], current: current === 0 },
+    { label: 'Thesis submitted', hint: done[1] ? 'Title, link and adviser on file' : 'Add them in My Thesis', done: done[1], current: current === 1 },
+    { label: 'Panel assigned', hint: done[2] ? 'Chair and two members' : done[1] ? 'Waiting for matching panelists' : 'Starts after you submit', done: done[2], current: current === 2 },
+  ]
+})
+
+const form = ref({ title: '', link: '', adviserId: null as number | null })
 const isSaving = ref(false)
 const isConfirmOpen = ref(false)
 const isEditingThesis = ref(false)
@@ -56,9 +71,9 @@ const isEditingThesis = ref(false)
 const hasThesis = computed(() => !!thesis.value?.title?.trim())
 const showThesisForm = computed(() => !hasThesis.value || isEditingThesis.value)
 
-const aiRecommendation = ref<ExpertiseRecommendation | null>(null)
-const isLoadingRecommendation = ref(false)
-const aiRecommendationError = ref('')
+const matchResult = ref<ThesisMatchResult | null>(null)
+const isMatching = ref(false)
+const matchError = ref('')
 
 async function loadData() {
   if (!authUser.value)
@@ -69,14 +84,17 @@ async function loadData() {
     profile.value = await students.getProfile(authUser.value.id)
 
     if (profile.value) {
-      thesis.value = await students.getThesis(profile.value.id)
+      if (profile.value.program)
+        panelistOptions.value = await students.listPanelists(profile.value.program)
+
+      thesis.value = await students.getThesis(profile.value.stu_id)
       if (thesis.value) {
         form.value = {
           title: thesis.value.title,
           link: thesis.value.link ?? '',
-          adviserName: thesis.value.adviser_name ?? '',
+          adviserId: thesis.value.adviser_id,
         }
-        panel.value = await students.getPanel(thesis.value.id)
+        panel.value = await students.getPanel(thesis.value.thesis_id)
       }
     }
   }
@@ -85,6 +103,10 @@ async function loadData() {
   }
   finally {
     isLoading.value = false
+    await nextTick()
+    requestAnimationFrame(() => {
+      ready.value = true
+    })
   }
 }
 
@@ -93,7 +115,7 @@ function startEdit() {
     form.value = {
       title: thesis.value.title,
       link: thesis.value.link ?? '',
-      adviserName: thesis.value.adviser_name ?? '',
+      adviserId: thesis.value.adviser_id,
     }
   }
   successMessage.value = ''
@@ -105,7 +127,7 @@ function cancelEdit() {
     form.value = {
       title: thesis.value.title,
       link: thesis.value.link ?? '',
-      adviserName: thesis.value.adviser_name ?? '',
+      adviserId: thesis.value.adviser_id,
     }
   }
   isEditingThesis.value = false
@@ -113,7 +135,7 @@ function cancelEdit() {
 
 function handleSubmit() {
   errorMessage.value = ''
-  if (!form.value.title.trim() || !form.value.link.trim() || !form.value.adviserName.trim()) {
+  if (!form.value.title.trim() || !form.value.link.trim() || !form.value.adviserId) {
     errorMessage.value = 'Please fill in all fields before uploading.'
     return
   }
@@ -134,20 +156,23 @@ async function saveThesis() {
     return
   const title = form.value.title.trim()
   const link = form.value.link.trim()
-  const adviserName = form.value.adviserName.trim()
-  if (!title || !link || !adviserName) {
+  const adviserId = form.value.adviserId
+  if (!title || !link || !adviserId) {
     errorMessage.value = 'Please fill in all fields before uploading.'
     return
   }
   isSaving.value = true
   errorMessage.value = ''
   successMessage.value = ''
-  aiRecommendation.value = null
-  aiRecommendationError.value = ''
+  matchResult.value = null
+  matchError.value = ''
+  const previousTitle = thesis.value?.title
   try {
-    thesis.value = await students.submitThesis(profile.value.id, { title, link, adviserName })
+    thesis.value = await students.submitThesis(profile.value.stu_id, { title, link, adviserId })
     successMessage.value = 'Your thesis submission has been saved.'
     isEditingThesis.value = false
+    // A changed title wipes the old panel in the DB; re-read it.
+    panel.value = await students.getPanel(thesis.value.thesis_id)
   }
   catch (error: any) {
     errorMessage.value = error?.message ?? 'Failed to save your thesis submission.'
@@ -156,16 +181,24 @@ async function saveThesis() {
   }
   isSaving.value = false
 
-  isLoadingRecommendation.value = true
+  // Only re-match when the title changed or the panel is incomplete.
+  const needsMatch = previousTitle !== thesis.value.title || panel.value.length < 3
+  if (!needsMatch)
+    return
+
+  // RAG: embed the title (the query), semantically search panelist
+  // expertise, and auto-assign the panel on a match.
+  isMatching.value = true
   try {
-    aiRecommendation.value = await students.recommendExpertise(thesis.value.title)
-    panel.value = await students.autoAssignPanel(thesis.value.id, aiRecommendation.value.recommendedExpertise)
+    matchResult.value = await students.matchThesis(thesis.value.thesis_id, thesis.value.title, profile.value.program ?? '')
+    if (matchResult.value.panel)
+      panel.value = matchResult.value.panel
   }
   catch (error: any) {
-    aiRecommendationError.value = error?.data?.statusMessage ?? 'Failed to get an AI recommendation.'
+    matchError.value = error?.data?.statusMessage ?? 'Failed to match your thesis to a panel.'
   }
   finally {
-    isLoadingRecommendation.value = false
+    isMatching.value = false
   }
 }
 
@@ -203,109 +236,96 @@ onMounted(loadData)
     </template>
 
     <template v-else>
-      <section v-if="active === 'overview'" class="space-y-6">
+      <section v-if="active === 'overview'" class="space-y-8">
         <div>
-          <h1 class="text-2xl font-bold tracking-tight">
-            Welcome back, {{ profile.full_name }}
+          <h1 class="text-2xl font-bold">
+            Welcome, {{ profile.student_name }}
           </h1>
           <p class="text-sm text-muted-foreground">
-            Here's a summary of your thesis submission.
+            {{ profile.program }}{{ profile.course ? ` · ${profile.course}` : '' }}
           </p>
         </div>
 
-        <Card class="overflow-hidden py-0">
-          <div class="flex items-center gap-3 border-b bg-muted/30 px-6 py-4">
+        <ol class="grid gap-4 sm:grid-cols-3" aria-label="Your progress">
+          <li v-for="(step, i) in steps" :key="step.label" class="relative pt-3">
+            <span class="absolute inset-x-0 top-0 h-0.5 bg-border" aria-hidden="true" />
             <span
-              class="flex size-9 shrink-0 items-center justify-center rounded-full"
-              :class="hasThesis ? 'bg-primary/10 text-primary' : 'bg-accent text-accent-foreground'"
-            >
-              <CheckCircle2 v-if="hasThesis" class="size-5" />
-              <Clock v-else class="size-5" />
-            </span>
-            <div class="min-w-0 flex-1">
-              <CardTitle class="text-base">Thesis submission status</CardTitle>
-              <p class="text-xs text-muted-foreground">
-                {{ hasThesis ? 'Your details are on file' : 'Awaiting your first submission' }}
-              </p>
+              class="absolute inset-x-0 top-0 h-0.5 origin-left transition-transform duration-700 ease-out motion-reduce:transition-none"
+              :class="[step.done ? 'bg-primary' : 'bg-accent', ready && (step.done || step.current) ? 'scale-x-100' : 'scale-x-0']"
+              :style="{ transitionDelay: i * 350 + 'ms' }"
+              aria-hidden="true"
+            />
+            <div class="flex items-center gap-2">
+              <span
+                class="flex size-5 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-500"
+                :class="step.done ? 'bg-primary text-primary-foreground' : step.current ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'"
+              >
+                <Check v-if="step.done" class="size-3" />
+                <template v-else>{{ i + 1 }}</template>
+              </span>
+              <span class="font-heading text-sm font-semibold" :class="!step.done && !step.current && 'text-muted-foreground'">{{ step.label }}</span>
             </div>
-            <Badge :variant="hasThesis ? 'default' : 'outline'">
-              {{ hasThesis ? 'Submitted' : 'Pending' }}
-            </Badge>
-          </div>
-          <CardContent class="py-5">
-            <template v-if="hasThesis">
-              <dl class="grid gap-4 sm:grid-cols-2">
-                <div class="sm:col-span-2">
-                  <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Thesis title</dt>
-                  <dd class="mt-1 text-sm font-semibold">{{ thesis.title }}</dd>
-                </div>
+            <p class="mt-1 pl-7 text-xs text-muted-foreground">{{ step.hint }}</p>
+          </li>
+        </ol>
+
+        <div class="grid gap-6 lg:grid-cols-5">
+          <div class="rounded-lg border bg-card lg:col-span-3">
+            <div class="flex items-center justify-between gap-3 border-b px-5 py-3">
+              <h2 class="font-heading font-semibold">Your thesis</h2>
+              <Button v-if="hasThesis" variant="outline" size="sm" @click="active = 'thesis'; startEdit()">
+                <Pencil class="size-3.5" />
+                Edit
+              </Button>
+            </div>
+            <div class="p-5">
+              <dl v-if="hasThesis" class="space-y-4">
                 <div>
-                  <dt class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <UserRound class="size-3.5" />
-                    Adviser
-                  </dt>
-                  <dd class="mt-1 text-sm">{{ thesis.adviser_name }}</dd>
+                  <dt class="text-sm text-muted-foreground">Title</dt>
+                  <dd class="mt-0.5 font-heading text-lg font-semibold leading-snug text-balance">{{ thesis.title }}</dd>
                 </div>
-                <div v-if="thesis.link">
-                  <dt class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <LinkIcon class="size-3.5" />
-                    Link
-                  </dt>
-                  <dd class="mt-1 truncate text-sm">
-                    <a :href="thesis.link" target="_blank" rel="noopener" class="text-primary hover:underline">
-                      {{ thesis.link }}
-                    </a>
-                  </dd>
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <dt class="text-sm text-muted-foreground">Adviser</dt>
+                    <dd class="mt-0.5">{{ adviserName || '—' }}</dd>
+                  </div>
+                  <div v-if="thesis.link" class="min-w-0">
+                    <dt class="text-sm text-muted-foreground">Document</dt>
+                    <dd class="mt-0.5 truncate">
+                      <a :href="thesis.link" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-primary hover:underline">
+                        <LinkIcon class="size-3.5 shrink-0" />
+                        <span class="truncate">{{ thesis.link }}</span>
+                      </a>
+                    </dd>
+                  </div>
                 </div>
               </dl>
-            </template>
-            <p v-else class="text-sm text-muted-foreground">
-              You haven't submitted your thesis title yet. Go to "My Thesis" to upload it.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card v-if="hasThesis">
-          <CardHeader>
-            <CardTitle class="text-base">Thesis panel</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div v-if="panel.length === 0" class="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock class="size-4" />
-              Awaiting panel assignment. This updates automatically once matching panelists are found.
+              <div v-else class="py-4 text-center">
+                <p class="text-muted-foreground">You have not submitted your thesis yet.</p>
+                <Button class="mt-4" @click="active = 'thesis'">
+                  Submit your thesis
+                  <ArrowRight class="size-4" />
+                </Button>
+              </div>
             </div>
-            <ul v-else class="divide-y">
-              <li v-if="panelChair" class="flex items-center gap-3 py-2.5 first:pt-0">
-                <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Crown class="size-4" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium">{{ panelChair.full_name }}</p>
-                  <p class="truncate text-xs text-muted-foreground">{{ panelChair.position ?? 'Panel chair' }}</p>
-                </div>
-                <Badge variant="default">Chair</Badge>
-              </li>
-              <li v-for="member in panelMembers" :key="member.id" class="flex items-center gap-3 py-2.5 last:pb-0">
-                <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
-                  <UserRound class="size-4" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium">{{ member.full_name }}</p>
-                  <p class="truncate text-xs text-muted-foreground">{{ member.position ?? 'Panel member' }}</p>
-                </div>
-                <Badge variant="outline">Member</Badge>
-              </li>
-              <li v-if="!panelChair || panelMembers.length < 2" class="flex items-center gap-2 py-2.5 text-sm text-muted-foreground">
-                <Clock class="size-4 shrink-0" />
-                {{ !panelChair ? 'Chair' : `${2 - panelMembers.length} member${2 - panelMembers.length > 1 ? 's' : ''}` }} still pending.
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
+          </div>
+
+          <div class="rounded-lg border bg-card lg:col-span-2">
+            <div class="border-b px-5 py-3">
+              <h2 class="font-heading font-semibold">Thesis panel</h2>
+            </div>
+            <div class="p-5">
+              <p v-if="!hasThesis" class="text-sm text-muted-foreground">
+                Your panel is assigned after you submit a title.
+              </p>
+              <PanelList v-else :panel="panel" />
+            </div>
+          </div>
+        </div>
       </section>
 
       <section v-else-if="active === 'thesis'" class="space-y-6">
-        <h1 class="text-2xl font-bold tracking-tight">
+        <h1 class="text-2xl font-bold">
           My Thesis
         </h1>
 
@@ -338,8 +358,21 @@ onMounted(loadData)
               </div>
 
               <div class="flex flex-col gap-2">
-                <Label for="adviser-name">Adviser name</Label>
-                <Input id="adviser-name" v-model="form.adviserName" placeholder="e.g. Dr. Juan Dela Cruz" required />
+                <Label for="adviser-id">Adviser</Label>
+                <select
+                  id="adviser-id"
+                  v-model="form.adviserId"
+                  required
+                  class="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none"
+                >
+                  <option :value="null" disabled>Select your adviser</option>
+                  <option v-for="p in panelistOptions" :key="p.panel_id" :value="p.panel_id">
+                    {{ p.full_name }}{{ p.position ? ` — ${p.position}` : '' }}
+                  </option>
+                </select>
+                <p v-if="panelistOptions.length === 0" class="text-xs text-muted-foreground">
+                  No panelists are registered for your program yet — contact your chairperson.
+                </p>
               </div>
 
               <div class="flex items-center gap-2">
@@ -357,18 +390,18 @@ onMounted(loadData)
 
             <dl v-else-if="hasThesis" class="grid gap-4 sm:grid-cols-2">
               <div class="sm:col-span-2">
-                <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Thesis title</dt>
+                <dt class="text-sm text-muted-foreground">Thesis title</dt>
                 <dd class="mt-1 text-sm font-semibold">{{ thesis.title }}</dd>
               </div>
               <div>
-                <dt class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <dt class="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <UserRound class="size-3.5" />
                   Adviser
                 </dt>
-                <dd class="mt-1 text-sm">{{ thesis.adviser_name }}</dd>
+                <dd class="mt-1 text-sm">{{ adviserName || '—' }}</dd>
               </div>
               <div v-if="thesis.link">
-                <dt class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <dt class="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <LinkIcon class="size-3.5" />
                   Link
                 </dt>
@@ -382,6 +415,15 @@ onMounted(loadData)
           </CardContent>
         </Card>
 
+        <Card v-if="hasThesis">
+          <CardHeader>
+            <CardTitle class="text-base">Assigned panel</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PanelList :panel="panel" />
+          </CardContent>
+        </Card>
+
         <Dialog v-model:open="isConfirmOpen">
           <DialogContent class="max-w-sm">
             <DialogHeader>
@@ -392,7 +434,9 @@ onMounted(loadData)
             </DialogHeader>
             <div class="space-y-1.5 rounded-lg border bg-muted/40 p-3 text-sm">
               <p class="font-medium">{{ form.title }}</p>
-              <p class="text-muted-foreground">Adviser: {{ form.adviserName }}</p>
+              <p class="text-muted-foreground">
+                Adviser: {{ panelistOptions.find(p => p.panel_id === form.adviserId)?.full_name ?? '—' }}
+              </p>
             </div>
             <DialogFooter>
               <Button variant="outline" :disabled="isSaving" @click="isConfirmOpen = false">
@@ -407,28 +451,30 @@ onMounted(loadData)
           </DialogContent>
         </Dialog>
 
-        <Card v-if="isLoadingRecommendation || aiRecommendationError || aiRecommendation">
+        <Card v-if="isMatching || matchError || matchResult">
           <CardHeader>
             <CardTitle class="flex items-center gap-1.5 text-base">
               <Sparkles class="size-4" />
-              Grok's recommended expertise
+              AI panel match
             </CardTitle>
           </CardHeader>
-          <CardContent class="space-y-2">
-            <div v-if="isLoadingRecommendation" class="flex items-center gap-2 text-sm text-muted-foreground">
+          <CardContent class="space-y-3">
+            <div v-if="isMatching" class="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 class="size-4 animate-spin" />
-              Asking Grok which expertise fits this thesis...
+              Searching for panelists whose expertise fits this thesis...
             </div>
-            <div v-else-if="aiRecommendationError" class="flex items-start gap-2 text-sm text-destructive">
+            <div v-else-if="matchError" class="flex items-start gap-2 text-sm text-destructive">
               <AlertCircle class="mt-0.5 size-4 shrink-0" />
-              <span>{{ aiRecommendationError }}</span>
+              <span>{{ matchError }}</span>
             </div>
-            <template v-else-if="aiRecommendation">
+            <template v-else-if="matchResult">
               <div class="flex flex-wrap gap-1.5">
-                <Badge v-for="area in aiRecommendation.recommendedExpertise" :key="area" variant="secondary">{{ area }}</Badge>
+                <Badge v-for="c in matchResult.candidates" :key="c.expertise" variant="secondary">
+                  {{ c.expertise }} ({{ (c.similarity * 100).toFixed(0) }}%)
+                </Badge>
               </div>
               <p class="text-sm text-muted-foreground">
-                {{ aiRecommendation.reasoning }}
+                {{ matchResult.response }}
               </p>
             </template>
           </CardContent>

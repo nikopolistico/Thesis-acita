@@ -1,43 +1,69 @@
-import type { StudentInformation, ThesisPanelMember, ThesisTitle } from '~/types/database'
+import type { Student, Thesis, ThesisPanelMember } from '~/types/database'
 
-export interface ExpertiseRecommendation {
-  recommendedExpertise: string[]
-  reasoning: string
+export interface PanelistOption {
+  panel_id: number
+  full_name: string
+  position: string | null
+}
+
+export interface ThesisMatchCandidate {
+  full_name: string
+  expertise: string
+  similarity: number
+}
+
+export interface ThesisMatchResult {
+  candidates: ThesisMatchCandidate[]
+  isMatch: boolean
+  response: string
+  panel: ThesisPanelMember[] | null
 }
 
 export function useStudents() {
   const supabase = useSupabase()
 
-  async function getProfile(userId: number): Promise<StudentInformation | null> {
+  async function getProfile(userId: number): Promise<Student | null> {
     const { data, error } = await supabase.rpc('get_student_profile', { p_user_id: userId })
     if (error)
       throw error
     return data
   }
 
-  async function getThesis(studentId: number): Promise<ThesisTitle | null> {
-    const { data, error } = await supabase.rpc('get_student_thesis', { p_student_id: studentId })
+  async function getThesis(stuId: number): Promise<Thesis | null> {
+    const { data, error } = await supabase.rpc('get_student_thesis', { p_stu_id: stuId })
     if (error)
       throw error
     return data
   }
 
-  async function submitThesis(studentId: number, payload: { title: string, link: string, adviserName: string }): Promise<ThesisTitle> {
+  async function listPanelists(program: string): Promise<PanelistOption[]> {
+    const { data, error } = await supabase.rpc('list_panelists_public', { p_program: program })
+    if (error)
+      throw error
+    return data ?? []
+  }
+
+  async function submitThesis(stuId: number, payload: { title: string, link: string, adviserId: number | null }): Promise<Thesis> {
     const { data, error } = await supabase.rpc('submit_student_thesis', {
-      p_student_id: studentId,
+      p_stu_id: stuId,
       p_title: payload.title,
       p_link: payload.link,
-      p_adviser_name: payload.adviserName,
+      p_adviser_id: payload.adviserId,
     })
     if (error)
       throw error
     return data
   }
 
-  async function recommendExpertise(title: string): Promise<ExpertiseRecommendation> {
-    return $fetch<ExpertiseRecommendation>('/api/ai/recommend-expertise', {
+  /**
+   * The RAG pipeline: embed the thesis title (the query),
+   * semantically search panelist expertise, and auto-assign the
+   * panel when a candidate clears the similarity threshold.
+   */
+  async function matchThesis(thesisId: number, title: string, program: string): Promise<ThesisMatchResult> {
+    return $fetch<ThesisMatchResult>('/api/ai/match-thesis', {
       method: 'POST',
-      body: { title },
+      body: { thesisId, title, program },
     })
   }
 
@@ -48,15 +74,5 @@ export function useStudents() {
     return data ?? []
   }
 
-  async function autoAssignPanel(thesisId: number, expertiseAreas: string[]): Promise<ThesisPanelMember[]> {
-    const { data, error } = await supabase.rpc('auto_assign_panel', {
-      p_thesis_id: thesisId,
-      p_expertise_areas: expertiseAreas,
-    })
-    if (error)
-      throw error
-    return data ?? []
-  }
-
-  return { getProfile, getThesis, submitThesis, recommendExpertise, getPanel, autoAssignPanel }
+  return { getProfile, getThesis, listPanelists, submitThesis, matchThesis, getPanel }
 }

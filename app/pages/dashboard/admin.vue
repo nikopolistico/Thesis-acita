@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import {
   AlertCircle,
+  ArrowRight,
+  Search,
   CheckCircle2,
   Clock,
   Crown,
+  Ellipsis,
   LayoutDashboard,
   Link as LinkIcon,
   Loader2,
@@ -17,12 +20,15 @@ import {
 } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardTitle } from '@/components/ui/card'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useTransition } from '@vueuse/core'
 import type { AdminPanelistEntry, AdminStudentEntry, AdminThesisPanelMember } from '~/composables/useAdmin'
-import type { AdminInformation } from '~/types/database'
+import type { ProgramChairperson } from '~/types/database'
 
 definePageMeta({ middleware: 'dashboard', role: 'admin' })
 
@@ -37,8 +43,9 @@ const authUser = useAuthUser()
 const admin = useAdmin()
 
 const isLoading = ref(true)
+const ready = ref(false)
 const errorMessage = ref('')
-const profile = ref<AdminInformation | null>(null)
+const profile = ref<ProgramChairperson | null>(null)
 const students = ref<AdminStudentEntry[]>([])
 const panelists = ref<AdminPanelistEntry[]>([])
 
@@ -63,6 +70,11 @@ async function loadData() {
   }
   finally {
     isLoading.value = false
+    // Let bars mount at 0, then grow to their value.
+    await nextTick()
+    requestAnimationFrame(() => {
+      ready.value = true
+    })
   }
 }
 
@@ -89,17 +101,91 @@ const overviewChartData = computed(() => [
   { label: 'Pending', value: students.value.length - submittedCount.value },
 ])
 
+function isPanelComplete(student: AdminStudentEntry) {
+  return student.panel.some(p => p.role === 'chair') && student.panel.filter(p => p.role === 'member').length >= 2
+}
+
+const completePanelCount = computed(() => students.value.filter(s => s.title && isPanelComplete(s)).length)
+const incompleteStudents = computed(() => students.value.filter(s => s.title && !isPanelComplete(s)))
+const pendingStudents = computed(() => students.value.filter(s => !s.title))
+
+type StudentFilter = 'all' | 'submitted' | 'pending' | 'incomplete'
+const studentFilter = ref<StudentFilter>('all')
+const studentSearch = ref('')
+
+const filterOptions = computed(() => [
+  { key: 'all' as const, label: 'All', count: students.value.length },
+  { key: 'submitted' as const, label: 'Submitted', count: submittedCount.value },
+  { key: 'pending' as const, label: 'Not submitted', count: pendingCount.value },
+  { key: 'incomplete' as const, label: 'Panel incomplete', count: incompleteStudents.value.length },
+])
+
+const filteredStudents = computed(() => {
+  const q = studentSearch.value.trim().toLowerCase()
+  return students.value.filter((s) => {
+    if (studentFilter.value === 'submitted' && !s.title)
+      return false
+    if (studentFilter.value === 'pending' && s.title)
+      return false
+    if (studentFilter.value === 'incomplete' && !(s.title && !isPanelComplete(s)))
+      return false
+    if (!q)
+      return true
+    return [s.student_name, s.email, s.title, s.adviser_name].some(v => v?.toLowerCase().includes(q))
+  })
+})
+
+function openStudents(filter: StudentFilter) {
+  studentFilter.value = filter
+  studentSearch.value = ''
+  active.value = 'students'
+}
+
+const panelistSearch = ref('')
+const filteredPanelists = computed(() => {
+  const q = panelistSearch.value.trim().toLowerCase()
+  if (!q)
+    return panelists.value
+  return panelists.value.filter(p =>
+    p.full_name.toLowerCase().includes(q)
+    || p.expertise.some(e => e.expertise.toLowerCase().includes(q)),
+  )
+})
+
+const workload = computed(() => [...panelists.value].sort((a, b) => b.assignment_count - a.assignment_count))
+const maxWorkload = computed(() => Math.max(1, ...panelists.value.map(p => p.assignment_count)))
+
+const countStudents = useTransition(() => students.value.length, { duration: 900 })
+const countSubmitted = useTransition(() => submittedCount.value, { duration: 900 })
+const countComplete = useTransition(() => completePanelCount.value, { duration: 900 })
+const countPanelists = useTransition(() => panelists.value.length, { duration: 900 })
+
+const stats = computed(() => [
+  { label: 'Students', value: countStudents.value, note: 'registered', ratio: 100, icon: Users, tone: 'bg-secondary text-secondary-foreground' },
+  { label: 'Thesis submitted', value: countSubmitted.value, note: `${submissionRate.value}% of students`, ratio: submissionRate.value, icon: CheckCircle2, tone: 'bg-primary/10 text-primary' },
+  { label: 'Panels complete', value: countComplete.value, note: `of ${submittedCount.value} submitted`, ratio: submittedCount.value ? (completePanelCount.value / submittedCount.value) * 100 : 0, icon: Crown, tone: 'bg-accent text-accent-foreground' },
+  { label: 'Panelists', value: countPanelists.value, note: 'in your program', ratio: 100, icon: UserCog, tone: 'bg-secondary text-secondary-foreground' },
+])
+
+function sortedPanel(panel: AdminThesisPanelMember[]) {
+  return [...panel].sort((a, b) => (a.role === b.role ? 0 : a.role === 'chair' ? -1 : 1))
+}
+
+function initials(name: string) {
+  return name.replace(/^(dr|engr|prof|mr|ms|mrs)\.?\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
+}
+
 function panelChairName(panel: AdminThesisPanelMember[]) {
-  return panel.find(p => p.role_in_panel === 'chair')?.full_name
+  return panel.find(p => p.role === 'chair')?.full_name
 }
 
 function panelMemberNames(panel: AdminThesisPanelMember[]) {
-  return panel.filter(p => p.role_in_panel === 'member').map(p => p.full_name)
+  return panel.filter(p => p.role === 'member').map(p => p.full_name)
 }
 
 // ---- Add panelist ----
 const isAddOpen = ref(false)
-const addForm = ref({ fullName: '', position: '', email: '' })
+const addForm = ref({ fullName: '', position: '' })
 const addExpertiseTags = ref<string[]>([])
 const addExpertiseInput = ref('')
 const isSavingPanelist = ref(false)
@@ -126,14 +212,13 @@ async function submitAddPanelist() {
     const created = await admin.registerPanelist({
       fullName: addForm.value.fullName.trim(),
       position: addForm.value.position.trim(),
-      email: addForm.value.email.trim(),
       program: profile.value.program,
     })
     for (const tag of addExpertiseTags.value)
-      await admin.addExpertise(created.id, tag)
+      await admin.addExpertise(created.panel_id, tag)
 
     isAddOpen.value = false
-    addForm.value = { fullName: '', position: '', email: '' }
+    addForm.value = { fullName: '', position: '' }
     addExpertiseTags.value = []
     await refreshPanelists()
   }
@@ -162,7 +247,7 @@ async function submitEditPanelist() {
     return
   isSavingEdit.value = true
   try {
-    await admin.updatePanelist(editTarget.value.id, {
+    await admin.updatePanelist(editTarget.value.panel_id, {
       fullName: editForm.value.fullName.trim(),
       position: editForm.value.position.trim(),
     })
@@ -192,7 +277,7 @@ async function submitDeletePanelist() {
     return
   isDeleting.value = true
   try {
-    await admin.deletePanelist(deleteTarget.value.id)
+    await admin.deletePanelist(deleteTarget.value.panel_id)
     isDeleteOpen.value = false
     await refreshPanelists()
   }
@@ -207,13 +292,13 @@ async function submitDeletePanelist() {
 // ---- Expertise tags ----
 const newExpertise = ref<Record<number, string>>({})
 
-async function submitAddExpertise(panelistId: number) {
-  const value = (newExpertise.value[panelistId] ?? '').trim()
+async function submitAddExpertise(panelId: number) {
+  const value = (newExpertise.value[panelId] ?? '').trim()
   if (!value)
     return
   try {
-    await admin.addExpertise(panelistId, value)
-    newExpertise.value[panelistId] = ''
+    await admin.addExpertise(panelId, value)
+    newExpertise.value[panelId] = ''
     await refreshPanelists()
   }
   catch (error: any) {
@@ -221,9 +306,9 @@ async function submitAddExpertise(panelistId: number) {
   }
 }
 
-async function submitRemoveExpertise(expertiseId: number) {
+async function submitRemoveExpertise(exsId: number) {
   try {
-    await admin.removeExpertise(expertiseId)
+    await admin.removeExpertise(exsId)
     await refreshPanelists()
   }
   catch (error: any) {
@@ -260,129 +345,183 @@ onMounted(loadData)
     </template>
 
     <template v-else>
-      <section v-if="active === 'overview'" class="space-y-6">
+      <section v-if="active === 'overview'" class="space-y-8">
         <div>
-          <h1 class="text-2xl font-bold tracking-tight">
+          <h1 class="text-2xl font-bold">
             Overview
           </h1>
           <p class="text-sm text-muted-foreground">
-            {{ profile.program }} &middot; a snapshot of thesis submission activity for your program.
+            {{ profile.program }}
           </p>
         </div>
 
-        <div class="grid gap-4 sm:grid-cols-3">
-          <Card>
-            <CardContent class="flex items-center gap-3">
-              <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--chart-2)_15%,transparent)] text-[var(--chart-2)]">
-                <Users class="size-5" />
+        <dl class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div v-for="stat in stats" :key="stat.label" class="rounded-lg border bg-card p-5 transition-colors hover:border-primary/40">
+            <div class="flex items-center justify-between">
+              <dt class="text-sm text-muted-foreground">{{ stat.label }}</dt>
+              <span class="flex size-8 items-center justify-center rounded-md" :class="stat.tone">
+                <component :is="stat.icon" class="size-4" />
               </span>
-              <div class="min-w-0">
-                <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Students</p>
-                <p class="text-2xl font-bold leading-tight">{{ students.length }}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent class="flex items-center gap-3">
-              <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <CheckCircle2 class="size-5" />
-              </span>
-              <div class="min-w-0">
-                <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Submitted</p>
-                <p class="text-2xl font-bold leading-tight">{{ submittedCount }}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent class="flex items-center gap-3">
-              <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
-                <Clock class="size-5" />
-              </span>
-              <div class="min-w-0">
-                <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pending Submission</p>
-                <p class="text-2xl font-bold leading-tight">{{ pendingCount }}</p>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+            <dd class="mt-3 font-heading text-3xl font-bold tabular-nums">{{ Math.round(stat.value) }}</dd>
+            <p class="mt-1 text-xs text-muted-foreground">{{ stat.note }}</p>
+            <div class="mt-3 h-1 rounded-full bg-muted">
+              <div class="h-full rounded-full bg-primary/70 transition-[width] duration-1000 ease-out motion-reduce:transition-none" :style="{ width: (ready ? stat.ratio : 0) + '%' }" />
+            </div>
+          </div>
+        </dl>
+
+        <div>
+          <div class="mb-2 flex items-baseline justify-between text-sm">
+            <h2 class="font-heading font-semibold">Submission progress</h2>
+            <span class="tabular-nums text-muted-foreground">{{ submittedCount }} of {{ students.length }}</span>
+          </div>
+          <div class="flex h-3 overflow-hidden rounded-full bg-muted" role="img" :aria-label="`${submittedCount} of ${students.length} students have submitted`">
+            <div class="bg-primary transition-[width] duration-1000 ease-out motion-reduce:transition-none" :style="{ width: (ready ? submissionRate : 0) + '%' }" />
+          </div>
         </div>
 
-        <Card class="overflow-hidden py-0">
-          <div class="flex items-center justify-between gap-3 border-b px-6 py-4">
-            <div>
-              <CardTitle class="text-base">Submission progress</CardTitle>
-              <p class="text-xs text-muted-foreground">Breakdown of student thesis submissions</p>
+        <div class="grid gap-8 lg:grid-cols-2">
+          <div>
+            <h2 class="mb-3 font-heading font-semibold">Needs attention</h2>
+            <div v-if="pendingStudents.length === 0 && incompleteStudents.length === 0" class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
+              Everyone has submitted and every panel is complete.
             </div>
-            <Badge variant="outline" class="tabular-nums">{{ submissionRate }}% complete</Badge>
+            <ul v-else class="divide-y rounded-lg border bg-card">
+              <li v-if="pendingStudents.length">
+                <button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60" @click="openStudents('pending')">
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-sm font-medium">{{ pendingStudents.length }} student{{ pendingStudents.length === 1 ? '' : 's' }} not submitted</span>
+                    <span class="block truncate text-xs text-muted-foreground">{{ pendingStudents.slice(0, 3).map(s => s.student_name).join(', ') }}{{ pendingStudents.length > 3 ? '...' : '' }}</span>
+                  </span>
+                  <ArrowRight class="size-4 shrink-0 text-muted-foreground" />
+                </button>
+              </li>
+              <li v-if="incompleteStudents.length">
+                <button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60" @click="openStudents('incomplete')">
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-sm font-medium">{{ incompleteStudents.length }} panel{{ incompleteStudents.length === 1 ? '' : 's' }} incomplete</span>
+                    <span class="block truncate text-xs text-muted-foreground">Add expertise tags to panelists so matching can fill them.</span>
+                  </span>
+                  <ArrowRight class="size-4 shrink-0 text-muted-foreground" />
+                </button>
+              </li>
+            </ul>
           </div>
-          <CardContent class="py-5">
-            <DashboardBarChart :data="overviewChartData" />
-          </CardContent>
-        </Card>
+
+          <div>
+            <h2 class="mb-3 font-heading font-semibold">Panel workload</h2>
+            <p v-if="panelists.length === 0" class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
+              No panelists yet. Add one in the Panelists tab.
+            </p>
+            <ul v-else class="space-y-3 rounded-lg border bg-card p-4">
+              <li v-for="(p, i) in workload.slice(0, 6)" :key="p.panel_id">
+                <div class="mb-1 flex items-baseline justify-between gap-3 text-sm">
+                  <span class="truncate">{{ p.full_name }}</span>
+                  <span class="shrink-0 tabular-nums text-muted-foreground">{{ p.assignment_count }}</span>
+                </div>
+                <div class="h-1.5 rounded-full bg-muted">
+                  <div class="h-full rounded-full bg-primary transition-[width] duration-700 ease-out motion-reduce:transition-none" :style="{ width: (ready ? (p.assignment_count / maxWorkload) * 100 : 0) + '%', transitionDelay: i * 80 + 'ms' }" />
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
       </section>
 
       <section v-else-if="active === 'students'" class="space-y-4">
         <div>
-          <h1 class="text-2xl font-bold tracking-tight">Students</h1>
+          <h1 class="text-2xl font-bold">Students</h1>
           <p class="text-sm text-muted-foreground">{{ profile.program }}</p>
         </div>
-        <div v-if="students.length === 0" class="text-sm text-muted-foreground">No students registered yet.</div>
-        <div v-else class="overflow-x-auto rounded-lg border bg-background">
-          <table class="w-full text-sm">
-            <thead class="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="relative w-full sm:w-72">
+            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input v-model="studentSearch" type="search" placeholder="Search name, email, title or adviser" class="h-9 pl-9" aria-label="Search students" />
+          </div>
+          <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter students">
+            <button
+              v-for="f in filterOptions"
+              :key="f.key"
+              type="button"
+              :aria-pressed="studentFilter === f.key"
+              class="rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring"
+              :class="studentFilter === f.key ? 'border-primary bg-primary text-primary-foreground' : 'text-muted-foreground hover:border-primary hover:text-foreground'"
+              @click="studentFilter = f.key"
+            >
+              {{ f.label }}
+              <span class="ml-1 tabular-nums opacity-70">{{ f.count }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="students.length === 0" class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          No students have registered yet.
+        </div>
+        <div v-else-if="filteredStudents.length === 0" class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          No students match. Clear the search or pick another filter.
+        </div>
+        <div v-else class="overflow-x-auto rounded-lg border bg-card">
+          <table class="w-full min-w-[64rem] text-sm">
+            <thead class="border-b bg-muted/50 text-left text-muted-foreground">
               <tr>
-                <th class="px-4 py-2.5 font-medium">Name</th>
-                <th class="px-4 py-2.5 font-medium">Email</th>
-                <th class="px-4 py-2.5 font-medium">Program</th>
-                <th class="px-4 py-2.5 font-medium">Thesis Title</th>
-                <th class="px-4 py-2.5 font-medium">Adviser</th>
-                <th class="px-4 py-2.5 font-medium">Link</th>
-                <th class="px-4 py-2.5 font-medium">Panel</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Student</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Thesis</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Link</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Adviser</th>
+                <th scope="col" class="px-4 py-2.5 font-medium">Panel</th>
               </tr>
             </thead>
-            <tbody class="divide-y">
-              <tr v-for="student in students" :key="student.id">
-                <td class="px-4 py-2.5">{{ student.full_name }}</td>
-                <td class="px-4 py-2.5 text-muted-foreground">{{ student.email }}</td>
-                <td class="px-4 py-2.5 text-muted-foreground">{{ student.program }}</td>
-                <td class="px-4 py-2.5">
-                  <span v-if="student.title">{{ student.title }}</span>
+            <TransitionGroup tag="tbody" name="row" class="divide-y">
+              <tr v-for="student in filteredStudents" :key="student.stu_id" class="align-top transition-colors hover:bg-muted/40">
+                <td class="px-4 py-3">
+                  <p class="font-medium">{{ student.student_name }}</p>
+                  <p class="text-xs text-muted-foreground">{{ student.email }}</p>
+                  <p v-if="student.course" class="text-xs text-muted-foreground">{{ student.course }}</p>
+                </td>
+                <td class="max-w-xs px-4 py-3">
+                  <template v-if="student.title">
+                    <p class="line-clamp-2" :title="student.title">{{ student.title }}</p>
+                  </template>
                   <Badge v-else variant="outline">Not submitted</Badge>
                 </td>
-                <td class="px-4 py-2.5 text-muted-foreground">{{ student.adviser_name }}</td>
-                <td class="px-4 py-2.5">
-                  <a v-if="student.link" :href="student.link" target="_blank" rel="noopener" class="flex items-center gap-1.5 text-primary hover:underline">
-                    <LinkIcon class="size-4" />
-                    View
+                <td class="px-4 py-3">
+                  <a v-if="student.link" :href="student.link" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-primary hover:underline">
+                    <LinkIcon class="size-3.5" />
+                    Open
                   </a>
+                  <span v-else class="text-muted-foreground">—</span>
                 </td>
-                <td class="px-4 py-2.5">
-                  <div v-if="!student.title" class="text-muted-foreground">&mdash;</div>
-                  <div v-else-if="student.panel.length === 0" class="text-muted-foreground">
-                    <Badge variant="outline">Pending</Badge>
-                  </div>
-                  <div v-else class="flex flex-wrap items-center gap-1">
-                    <Badge v-if="panelChairName(student.panel)" variant="default" class="gap-1">
-                      <Crown class="size-3" />
-                      {{ panelChairName(student.panel) }}
-                    </Badge>
-                    <Badge v-for="name in panelMemberNames(student.panel)" :key="name" variant="secondary">
-                      {{ name }}
-                    </Badge>
-                    <Badge v-if="!panelChairName(student.panel) || panelMemberNames(student.panel).length < 2" variant="outline">
-                      Incomplete
-                    </Badge>
-                  </div>
+                <td class="px-4 py-3 text-muted-foreground">{{ student.adviser_name || '—' }}</td>
+                <td class="px-4 py-3">
+                  <span v-if="!student.title" class="text-muted-foreground">—</span>
+                  <Badge v-else-if="student.panel.length === 0" variant="outline">Pending</Badge>
+                  <ul v-else class="space-y-2">
+                    <li v-for="m in sortedPanel(student.panel)" :key="m.full_name" class="flex items-start gap-2">
+                      <Crown v-if="m.role === 'chair'" class="mt-0.5 size-3.5 shrink-0 text-accent-foreground" aria-label="Chair" />
+                      <span v-else class="mt-0.5 size-3.5 shrink-0" />
+                      <span class="min-w-0">
+                        <span class="block font-medium leading-tight">{{ m.full_name }}</span>
+                        <span class="block text-xs text-muted-foreground">{{ m.position || (m.role === 'chair' ? 'Chair' : 'Member') }}</span>
+                      </span>
+                    </li>
+                    <li v-if="!isPanelComplete(student)"><Badge variant="outline">Incomplete</Badge></li>
+                  </ul>
                 </td>
               </tr>
-            </tbody>
+            </TransitionGroup>
           </table>
         </div>
+        <p v-if="students.length" class="text-xs text-muted-foreground">
+          Showing {{ filteredStudents.length }} of {{ students.length }} students.
+        </p>
       </section>
 
       <section v-else-if="active === 'panelists'" class="space-y-4">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <h1 class="text-2xl font-bold tracking-tight">Panelists</h1>
+            <h1 class="text-2xl font-bold">Panelists</h1>
             <p class="text-sm text-muted-foreground">
               {{ profile.program }} &middot; manage panelist records and their tagged expertise areas.
             </p>
@@ -436,11 +575,7 @@ onMounted(loadData)
                       </button>
                     </Badge>
                   </div>
-                  <p class="text-xs text-muted-foreground">Press Enter or + to add each area.</p>
-                </div>
-                <div class="flex flex-col gap-2">
-                  <Label for="panelist-email">Email (optional)</Label>
-                  <Input id="panelist-email" v-model="addForm.email" type="email" placeholder="e.g. panelist@carsu.edu.ph" />
+                  <p class="text-xs text-muted-foreground">Press Enter or + to add each area. Each one is embedded for semantic matching once saved.</p>
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" :disabled="isSavingPanelist" @click="isAddOpen = false">
@@ -456,57 +591,88 @@ onMounted(loadData)
           </Dialog>
         </div>
 
-        <div v-if="panelists.length === 0" class="text-sm text-muted-foreground">
+        <div v-if="panelists.length === 0" class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           No panelists yet. Add one to start auto-assigning panels.
         </div>
 
-        <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <Card v-for="panelist in panelists" :key="panelist.id" class="py-0 overflow-hidden">
-            <div class="flex items-start gap-3 border-b bg-muted/30 px-4 py-3.5">
-              <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <UserRound class="size-4" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-semibold">{{ panelist.full_name }}</p>
-                <p class="truncate text-xs text-muted-foreground">{{ panelist.position || 'No position set' }}</p>
-              </div>
-              <div class="flex shrink-0 items-center gap-1">
-                <button type="button" aria-label="Edit panelist" class="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" @click="openEdit(panelist)">
-                  <Pencil class="size-3.5" />
-                </button>
-                <button type="button" aria-label="Delete panelist" class="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" @click="confirmDelete(panelist)">
-                  <Trash2 class="size-3.5" />
-                </button>
-              </div>
-            </div>
-            <CardContent class="space-y-3 py-4">
-              <p v-if="panelist.email" class="truncate text-xs text-muted-foreground">{{ panelist.email }}</p>
+        <div v-if="panelists.length > 0" class="relative w-full sm:w-72">
+          <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input v-model="panelistSearch" type="search" placeholder="Search name or expertise" class="h-9 pl-9" aria-label="Search panelists" />
+        </div>
+        <p v-if="panelists.length > 0 && filteredPanelists.length === 0" class="text-sm text-muted-foreground">
+          No panelists match your search.
+        </p>
 
-              <div class="flex flex-wrap gap-1.5">
-                <Badge v-for="tag in panelist.expertise" :key="tag.id" variant="secondary" class="gap-1 pr-1">
-                  {{ tag.expertise_area }}
-                  <button type="button" :aria-label="`Remove ${tag.expertise_area}`" class="rounded-full p-0.5 hover:bg-foreground/10" @click="submitRemoveExpertise(tag.id)">
-                    <X class="size-3" />
-                  </button>
-                </Badge>
-                <span v-if="panelist.expertise.length === 0" class="text-xs text-muted-foreground">No expertise tagged yet.</span>
+        <div v-if="filteredPanelists.length > 0" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <Card v-for="panelist in filteredPanelists" :key="panelist.panel_id" class="h-full">
+            <CardHeader class="items-start">
+              <div class="flex min-w-0 items-center gap-3">
+                <Avatar class="size-12 shrink-0">
+                  <AvatarFallback class="bg-accent font-heading text-base font-semibold text-accent-foreground">
+                    {{ initials(panelist.full_name) }}
+                  </AvatarFallback>
+                </Avatar>
+                <div class="min-w-0">
+                  <CardTitle class="truncate font-heading text-base">{{ panelist.full_name }}</CardTitle>
+                  <CardDescription class="truncate">{{ panelist.position || 'No position set' }}</CardDescription>
+                </div>
               </div>
+              <CardAction>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon" class="size-8" :aria-label="`Actions for ${panelist.full_name}`">
+                      <Ellipsis class="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem @select="openEdit(panelist)">
+                      <Pencil class="size-4" />
+                      Edit details
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" @select="confirmDelete(panelist)">
+                      <Trash2 class="size-4" />
+                      Remove panelist
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </CardAction>
+            </CardHeader>
 
-              <form class="flex items-center gap-1.5" @submit.prevent="submitAddExpertise(panelist.id)">
-                <Input
-                  v-model="newExpertise[panelist.id]"
-                  placeholder="Add expertise area"
-                  class="h-8 text-xs"
-                />
-                <Button type="submit" size="icon" variant="outline" class="size-8 shrink-0">
+            <CardContent class="flex-1 space-y-4">
+              <dl class="grid grid-cols-2 divide-x rounded-md border">
+                <div class="px-3 py-2">
+                  <dt class="text-xs text-muted-foreground">Panels</dt>
+                  <dd class="font-heading text-lg font-semibold tabular-nums">{{ panelist.assignment_count }}</dd>
+                </div>
+                <div class="px-3 py-2">
+                  <dt class="text-xs text-muted-foreground">Expertise areas</dt>
+                  <dd class="font-heading text-lg font-semibold tabular-nums">{{ panelist.expertise.length }}</dd>
+                </div>
+              </dl>
+
+              <div>
+                <p class="mb-2 text-xs text-muted-foreground">Expertise</p>
+                <div class="flex flex-wrap gap-1.5">
+                  <Badge v-for="tag in panelist.expertise" :key="tag.exs_id" variant="secondary" class="h-auto gap-1 whitespace-normal py-0.5 pr-1">
+                    {{ tag.expertise }}
+                    <button type="button" :aria-label="`Remove ${tag.expertise}`" class="rounded-full p-0.5 hover:bg-foreground/10" @click="submitRemoveExpertise(tag.exs_id)">
+                      <X class="size-3" />
+                    </button>
+                  </Badge>
+                  <span v-if="panelist.expertise.length === 0" class="text-xs text-muted-foreground">None yet. Add one so matching can pick this panelist.</span>
+                </div>
+              </div>
+            </CardContent>
+
+            <CardFooter class="border-t pt-4">
+              <form class="flex w-full items-center gap-1.5" @submit.prevent="submitAddExpertise(panelist.panel_id)">
+                <Input v-model="newExpertise[panelist.panel_id]" placeholder="Add expertise area" class="h-8 text-xs" :aria-label="`Add expertise for ${panelist.full_name}`" />
+                <Button type="submit" size="icon" variant="outline" class="size-8 shrink-0" aria-label="Add expertise">
                   <Plus class="size-3.5" />
                 </Button>
               </form>
-
-              <p class="text-xs text-muted-foreground">
-                {{ panelist.assignment_count }} panel assignment{{ panelist.assignment_count === 1 ? '' : 's' }}
-              </p>
-            </CardContent>
+            </CardFooter>
           </Card>
         </div>
 
@@ -561,3 +727,21 @@ onMounted(loadData)
     </template>
   </DashboardSidebar>
 </template>
+
+<style scoped>
+.row-enter-active,
+.row-leave-active {
+  transition: opacity 220ms ease, transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.row-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.row-leave-to {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-enter-active,
+  .row-leave-active { transition: none; }
+}
+</style>

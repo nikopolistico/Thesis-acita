@@ -2,6 +2,7 @@ interface RegisterBody {
   fullName: string
   email: string
   program: string
+  course: string
   password: string
 }
 
@@ -22,6 +23,7 @@ export default defineEventHandler(async (event) => {
     p_full_name: body.fullName,
     p_email: body.email,
     p_program: body.program || null,
+    p_course: body.course || null,
     p_password: body.password,
   })
 

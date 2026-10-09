@@ -14,53 +14,62 @@ export interface UserCredential {
   created_at: string
 }
 
-export interface AdminInformation {
-  id: number
+export interface ProgramChairperson {
+  pgchair_id: number
   user_id: number
   full_name: string
-  position: string | null
   program: string
+  position: string | null
+  status: string | null
   created_at: string
 }
 
-export interface StudentInformation {
-  id: number
+export interface Student {
+  stu_id: number
   user_id: number
-  full_name: string
+  student_name: string
   program: string | null
+  course: string | null
   created_at: string
 }
 
-export interface ThesisTitle {
-  id: number
-  student_id: number
+export interface Thesis {
+  thesis_id: number
+  stu_id: number
   title: string
   link: string | null
-  adviser_name: string | null
+  adviser_id: number | null
   created_at: string
 }
 
-export interface PanelistInformation {
-  id: number
+export interface Panelist {
+  panel_id: number
   full_name: string
   position: string | null
-  email: string | null
   program: string
+  status: string | null
   created_at: string
 }
 
-export interface PanelExpertise {
-  id: number
-  panelist_id: number
-  expertise_area: string
+export interface Expertise {
+  exs_id: number
+  panel_id: number
+  expertise: string
+  created_at: string
+}
+
+export interface AssignedPanelist {
+  assign_id: number
+  role: 'chair' | 'member'
+  panel_id: number
+  thesis_id: number
   created_at: string
 }
 
 export interface ThesisPanelMember {
-  id: number
-  role_in_panel: 'chair' | 'member'
-  status: string
-  panelist_id: number
+  assign_id: number
+  role: 'chair' | 'member'
+  panel_id: number
   full_name: string
   position: string | null
 }
