@@ -502,8 +502,11 @@ onMounted(loadData)
                       <Crown v-if="m.role === 'chair'" class="mt-0.5 size-3.5 shrink-0 text-accent-foreground" aria-label="Chair" />
                       <span v-else class="mt-0.5 size-3.5 shrink-0" />
                       <span class="min-w-0">
-                        <span class="block font-medium leading-tight">{{ m.full_name }}</span>
-                        <span class="block text-xs text-muted-foreground">{{ m.position || (m.role === 'chair' ? 'Chair' : 'Member') }}</span>
+                        <span class="flex flex-wrap items-center gap-1.5">
+                          <span class="font-medium leading-tight">{{ m.full_name }}</span>
+                          <Badge :variant="m.role === 'chair' ? 'default' : 'secondary'">{{ m.role === 'chair' ? 'Chair' : 'Member' }}</Badge>
+                        </span>
+                        <span v-if="m.position" class="block text-xs text-muted-foreground">{{ m.position }}</span>
                       </span>
                     </li>
                     <li v-if="!isPanelComplete(student)"><Badge variant="outline">Incomplete</Badge></li>
