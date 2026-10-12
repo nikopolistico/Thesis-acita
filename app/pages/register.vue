@@ -3,11 +3,14 @@ import { AlertCircle, Eye, EyeOff, Loader2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { AuthUser } from '~/composables/useAuthUser'
 
 const fullName = ref('')
 const partnerName = ref('')
 const email = ref('')
+// Must match the program a chairperson is provisioned with, or the chairperson will not see the student.
+const programs = ['BS Information Technology', 'BS Computer Science', 'BS Information Systems']
 const program = ref('')
 const course = ref('')
 const password = ref('')
@@ -22,6 +25,11 @@ async function handleSubmit() {
 
   if (!email.value.toLowerCase().endsWith('@carsu.edu.ph')) {
     errorMessage.value = 'Please use your @carsu.edu.ph email address.'
+    return
+  }
+
+  if (!program.value) {
+    errorMessage.value = 'Please choose your program.'
     return
   }
 
@@ -90,7 +98,16 @@ async function handleSubmit() {
 
       <div class="flex flex-col gap-2">
         <Label for="program">Program</Label>
-        <Input id="program" v-model="program" type="text" required placeholder="BS Computer Science" class="h-10" />
+        <Select v-model="program">
+          <SelectTrigger id="program" class="h-10 w-full">
+            <SelectValue placeholder="Choose your program" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="p in programs" :key="p" :value="p">
+              {{ p }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div class="flex flex-col gap-2">
