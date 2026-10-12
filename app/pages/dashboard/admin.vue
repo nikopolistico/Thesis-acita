@@ -504,8 +504,7 @@ onMounted(loadData)
       </section>
 
       <section v-else-if="active === 'students'" class="space-y-4">
-        <div>
-          <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center justify-between gap-3">
           <div>
             <h1 class="text-2xl font-bold">Students</h1>
             <p class="text-sm text-muted-foreground">{{ profile.program }}</p>
