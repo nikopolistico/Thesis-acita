@@ -218,10 +218,12 @@ onMounted(loadData)
     @update:active="active = $event"
     @logout="logout"
   >
+    <Transition name="pop">
     <div v-if="errorMessage" class="mb-6 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
       <AlertCircle class="mt-0.5 size-4 shrink-0" />
       <span>{{ errorMessage }}</span>
     </div>
+    </Transition>
 
     <div v-if="isLoading" class="flex items-center gap-2 text-sm text-muted-foreground">
       <Loader2 class="size-4 animate-spin" />
@@ -341,9 +343,11 @@ onMounted(loadData)
             </CardAction>
           </CardHeader>
           <CardContent>
+            <Transition name="pop">
             <div v-if="successMessage" class="mb-4 flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-primary">
               <span>{{ successMessage }}</span>
             </div>
+            </Transition>
 
             <form v-if="showThesisForm" class="space-y-4" @submit.prevent="handleSubmit">
               <div class="flex flex-col gap-2">

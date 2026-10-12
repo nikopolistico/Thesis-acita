@@ -62,10 +62,12 @@ async function handleSubmit() {
     :aside-items="['Edit anytime', 'Matched by expertise', 'Adviser excluded']"
   >
     <form class="flex flex-col gap-4" @submit.prevent="handleSubmit">
+      <Transition name="pop">
       <div v-if="errorMessage" role="alert" class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
         <AlertCircle class="mt-0.5 size-4 shrink-0" />
         <span>{{ errorMessage }}</span>
       </div>
+      </Transition>
 
       <div class="flex flex-col gap-2">
         <Label for="full-name">Full name</Label>

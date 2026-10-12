@@ -328,10 +328,12 @@ onMounted(loadData)
     @update:active="active = $event"
     @logout="logout"
   >
+    <Transition name="pop">
     <div v-if="errorMessage" class="mb-6 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
       <AlertCircle class="mt-0.5 size-4 shrink-0" />
       <span>{{ errorMessage }}</span>
     </div>
+    </Transition>
 
     <div v-if="isLoading" class="flex items-center gap-2 text-sm text-muted-foreground">
       <Loader2 class="size-4 animate-spin" />
@@ -545,10 +547,12 @@ onMounted(loadData)
                 </DialogDescription>
               </DialogHeader>
               <form class="space-y-4" @submit.prevent="submitAddPanelist">
+                <Transition name="pop">
                 <div v-if="addError" class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                   <AlertCircle class="mt-0.5 size-4 shrink-0" />
                   <span>{{ addError }}</span>
                 </div>
+                </Transition>
                 <div class="flex flex-col gap-2">
                   <Label for="panelist-name">Full name</Label>
                   <Input id="panelist-name" v-model="addForm.fullName" placeholder="e.g. Dr. Juan Dela Cruz" required />
@@ -606,7 +610,7 @@ onMounted(loadData)
           No panelists match your search.
         </p>
 
-        <div v-if="filteredPanelists.length > 0" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <TransitionGroup v-if="filteredPanelists.length > 0" tag="div" name="cards" class="relative grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Card v-for="panelist in filteredPanelists" :key="panelist.panel_id" class="h-full">
             <CardHeader class="items-start">
               <div class="flex min-w-0 items-center gap-3">
@@ -677,7 +681,7 @@ onMounted(loadData)
               </form>
             </CardFooter>
           </Card>
-        </div>
+        </TransitionGroup>
 
         <Dialog v-model:open="isEditOpen">
           <DialogContent class="max-w-sm">

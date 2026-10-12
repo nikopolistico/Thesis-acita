@@ -9,7 +9,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/tailwind.css'],
   runtimeConfig: {
     supabaseServiceRoleKey: '',
-    huggingfaceApiKey: '',
+    geminiApiKey: '',
     public: {
       supabaseUrl: '',
       supabaseAnonKey: '',
@@ -24,6 +24,9 @@ export default defineNuxtConfig({
     plugins: [
       tailwindcss(),
     ],
+  },
+  app: {
+    pageTransition: { name: 'route', mode: 'out-in' },
   },
   devtools: { enabled: true },
   compatibilityDate: '2024-04-03',
