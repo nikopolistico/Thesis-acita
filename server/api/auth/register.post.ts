@@ -1,5 +1,6 @@
 interface RegisterBody {
   fullName: string
+  partnerName?: string
   email: string
   program: string
   course: string
@@ -21,6 +22,7 @@ export default defineEventHandler(async (event) => {
 
   const { data, error } = await supabase.rpc('register_student', {
     p_full_name: body.fullName,
+    p_partner_name: body.partnerName || null,
     p_email: body.email,
     p_program: body.program || null,
     p_course: body.course || null,

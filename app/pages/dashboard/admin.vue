@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock,
   Crown,
+  Download,
   Ellipsis,
   LayoutDashboard,
   Link as LinkIcon,
@@ -131,7 +132,7 @@ const filteredStudents = computed(() => {
       return false
     if (!q)
       return true
-    return [s.student_name, s.email, s.title, s.adviser_name].some(v => v?.toLowerCase().includes(q))
+    return [s.student_name, s.partner_name, s.email, s.title, s.adviser_name].some(v => v?.toLowerCase().includes(q))
   })
 })
 
@@ -260,6 +261,77 @@ async function submitEditPanelist() {
   finally {
     isSavingEdit.value = false
   }
+}
+
+// ---- Delete student ----
+const isStudentDeleteOpen = ref(false)
+const studentDeleteTarget = ref<AdminStudentEntry | null>(null)
+const isDeletingStudent = ref(false)
+
+function confirmDeleteStudent(student: AdminStudentEntry) {
+  studentDeleteTarget.value = student
+  isStudentDeleteOpen.value = true
+}
+
+async function submitDeleteStudent() {
+  if (!studentDeleteTarget.value || !profile.value)
+    return
+  isDeletingStudent.value = true
+  try {
+    await admin.deleteStudent(studentDeleteTarget.value.stu_id, profile.value.program)
+    isStudentDeleteOpen.value = false
+    const [studentRows, panelistRows] = await Promise.all([
+      admin.listStudents(profile.value.program),
+      admin.listPanelists(profile.value.program),
+    ])
+    students.value = studentRows
+    panelists.value = panelistRows
+  }
+  catch (error: any) {
+    errorMessage.value = error?.message ?? 'Failed to delete student.'
+  }
+  finally {
+    isDeletingStudent.value = false
+  }
+}
+
+// ---- Export students to Excel (honours the current search and filter) ----
+async function exportStudents() {
+  const { Workbook } = await import('exceljs')
+  const wb = new Workbook()
+  const ws = wb.addWorksheet('Students')
+  ws.columns = [
+    { header: 'Student', key: 'name', width: 28 },
+    { header: 'Partner', key: 'partner', width: 28 },
+    { header: 'Email', key: 'email', width: 30 },
+    { header: 'Course', key: 'course', width: 20 },
+    { header: 'Thesis title', key: 'title', width: 50 },
+    { header: 'Link', key: 'link', width: 40 },
+    { header: 'Adviser', key: 'adviser', width: 28 },
+    { header: 'Panel chair', key: 'chair', width: 28 },
+    { header: 'Panel members', key: 'members', width: 40 },
+  ]
+  ws.getRow(1).font = { bold: true }
+  for (const s of filteredStudents.value) {
+    ws.addRow({
+      name: s.student_name,
+      partner: s.partner_name ?? '',
+      email: s.email,
+      course: s.course ?? '',
+      title: s.title ?? '',
+      link: s.link ?? '',
+      adviser: s.adviser_name ?? '',
+      chair: s.panel.find(m => m.role === 'chair')?.full_name ?? '',
+      members: s.panel.filter(m => m.role === 'member').map(m => m.full_name).join(', '),
+    })
+  }
+  const buffer = await wb.xlsx.writeBuffer()
+  const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `students-${profile.value?.program ?? 'list'}.xlsx`.replace(/\s+/g, '-')
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ---- Delete panelist ----
@@ -433,8 +505,15 @@ onMounted(loadData)
 
       <section v-else-if="active === 'students'" class="space-y-4">
         <div>
-          <h1 class="text-2xl font-bold">Students</h1>
-          <p class="text-sm text-muted-foreground">{{ profile.program }}</p>
+          <div class="flex items-center justify-between gap-3">
+          <div>
+            <h1 class="text-2xl font-bold">Students</h1>
+            <p class="text-sm text-muted-foreground">{{ profile.program }}</p>
+          </div>
+          <Button variant="outline" :disabled="filteredStudents.length === 0" @click="exportStudents">
+            <Download class="size-4" />
+            Download Excel
+          </Button>
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
@@ -473,12 +552,14 @@ onMounted(loadData)
                 <th scope="col" class="px-4 py-2.5 font-medium">Link</th>
                 <th scope="col" class="px-4 py-2.5 font-medium">Adviser</th>
                 <th scope="col" class="px-4 py-2.5 font-medium">Panel</th>
+                <th scope="col" class="px-4 py-2.5 font-medium"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <TransitionGroup tag="tbody" name="row" class="divide-y">
               <tr v-for="student in filteredStudents" :key="student.stu_id" class="align-top transition-colors hover:bg-muted/40">
                 <td class="px-4 py-3">
                   <p class="font-medium">{{ student.student_name }}</p>
+                  <p v-if="student.partner_name" class="font-medium">{{ student.partner_name }}</p>
                   <p class="text-xs text-muted-foreground">{{ student.email }}</p>
                   <p v-if="student.course" class="text-xs text-muted-foreground">{{ student.course }}</p>
                 </td>
@@ -514,6 +595,11 @@ onMounted(loadData)
                     <li v-if="!isPanelComplete(student)"><Badge variant="outline">Incomplete</Badge></li>
                   </ul>
                 </td>
+                <td class="px-4 py-3 text-right">
+                  <Button variant="ghost" size="icon" class="size-8 text-destructive" :aria-label="`Delete ${student.student_name}`" @click="confirmDeleteStudent(student)">
+                    <Trash2 class="size-4" />
+                  </Button>
+                </td>
               </tr>
             </TransitionGroup>
           </table>
@@ -521,6 +607,27 @@ onMounted(loadData)
         <p v-if="students.length" class="text-xs text-muted-foreground">
           Showing {{ filteredStudents.length }} of {{ students.length }} students.
         </p>
+
+        <Dialog v-model:open="isStudentDeleteOpen">
+          <DialogContent class="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Delete {{ studentDeleteTarget?.student_name }}?</DialogTitle>
+              <DialogDescription>
+                This removes the account, thesis and panel assignments. Their panelists become available for other students. This can't be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" :disabled="isDeletingStudent" @click="isStudentDeleteOpen = false">
+                Cancel
+              </Button>
+              <Button variant="destructive" :disabled="isDeletingStudent" @click="submitDeleteStudent">
+                <Loader2 v-if="isDeletingStudent" class="size-4 animate-spin" />
+                <Trash2 v-else class="size-4" />
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </section>
 
       <section v-else-if="active === 'panelists'" class="space-y-4">

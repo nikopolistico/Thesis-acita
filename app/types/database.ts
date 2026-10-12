@@ -28,6 +28,7 @@ export interface Student {
   stu_id: number
   user_id: number
   student_name: string
+  partner_name: string | null
   program: string | null
   course: string | null
   created_at: string

@@ -10,6 +10,7 @@ export interface AdminStudentEntry {
   stu_id: number
   user_id: number
   student_name: string
+  partner_name: string | null
   program: string | null
   course: string | null
   email: string
@@ -52,6 +53,12 @@ export function useAdmin() {
     if (error)
       throw error
     return data ?? []
+  }
+
+  async function deleteStudent(stuId: number, program: string): Promise<void> {
+    const { error } = await supabase.rpc('admin_delete_student', { p_stu_id: stuId, p_program: program })
+    if (error)
+      throw error
   }
 
   async function listPanelists(program: string): Promise<AdminPanelistEntry[]> {
@@ -101,5 +108,5 @@ export function useAdmin() {
       throw error
   }
 
-  return { getProfile, listStudents, listPanelists, registerPanelist, updatePanelist, deletePanelist, addExpertise, removeExpertise }
+  return { getProfile, listStudents, deleteStudent, listPanelists, registerPanelist, updatePanelist, deletePanelist, addExpertise, removeExpertise }
 }

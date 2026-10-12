@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import type { AuthUser } from '~/composables/useAuthUser'
 
 const fullName = ref('')
+const partnerName = ref('')
 const email = ref('')
 const program = ref('')
 const course = ref('')
@@ -35,6 +36,7 @@ async function handleSubmit() {
       method: 'POST',
       body: {
         fullName: fullName.value,
+        partnerName: partnerName.value,
         email: email.value,
         program: program.value,
         course: course.value,
@@ -72,6 +74,12 @@ async function handleSubmit() {
       <div class="flex flex-col gap-2">
         <Label for="full-name">Full name</Label>
         <Input id="full-name" v-model="fullName" type="text" autocomplete="name" required placeholder="Juan Dela Cruz" class="h-10" />
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <Label for="partner-name">Partner's full name <span class="font-normal text-muted-foreground">(optional)</span></Label>
+        <Input id="partner-name" v-model="partnerName" type="text" placeholder="Maria Santos" class="h-10" />
+        <p class="text-xs text-muted-foreground">You and your partner share this one account.</p>
       </div>
 
       <div class="flex flex-col gap-2">

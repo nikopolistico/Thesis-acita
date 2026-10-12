@@ -240,7 +240,7 @@ onMounted(loadData)
       <section v-if="active === 'overview'" class="space-y-8">
         <div>
           <h1 class="text-2xl font-bold">
-            Welcome, {{ profile.student_name }}
+            Welcome, {{ profile.partner_name ? `${profile.student_name} and ${profile.partner_name}` : profile.student_name }}
           </h1>
           <p class="text-sm text-muted-foreground">
             {{ profile.program }}{{ profile.course ? ` · ${profile.course}` : '' }}

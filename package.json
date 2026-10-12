@@ -34,6 +34,7 @@
     "better-sqlite3": "^12.11.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
     "nuxt": "^4.5.2",
     "reka-ui": "^2.11.0",
     "shadcn-vue": "^2.8.2",
