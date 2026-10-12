@@ -458,7 +458,7 @@ onMounted(loadData)
           <CardHeader>
             <CardTitle class="flex items-center gap-1.5 text-base">
               <Sparkles class="size-4" />
-              AI panel match
+              Panel match
             </CardTitle>
           </CardHeader>
           <CardContent class="space-y-3">
