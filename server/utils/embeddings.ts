@@ -5,15 +5,15 @@
  * disk, size limits, cold starts), so it's called remotely instead.
  */
 export async function embedText(text: string): Promise<number[]> {
-  const { hfToken } = useRuntimeConfig()
-  if (!hfToken)
-    throw new Error('NUXT_HF_TOKEN is not set')
+  const { huggingfaceApiKey } = useRuntimeConfig()
+  if (!huggingfaceApiKey)
+    throw new Error('NUXT_HUGGINGFACE_API_KEY is not set')
 
   const res = await fetch(
     'https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction',
     {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${hfToken}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${huggingfaceApiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
     },
   )
