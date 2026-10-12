@@ -12,7 +12,7 @@ const steps = [
   },
   {
     title: 'Your title meets panelist expertise',
-    text: 'Each panelist in your program has expertise tags. The system scores how close every tag is to your title.',
+    text: 'Each panelist has expertise tags. The system scores how close every tag is to your title.',
   },
   {
     title: 'The panel fills itself',

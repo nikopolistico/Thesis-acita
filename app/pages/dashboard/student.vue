@@ -84,8 +84,7 @@ async function loadData() {
     profile.value = await students.getProfile(authUser.value.id)
 
     if (profile.value) {
-      if (profile.value.program)
-        panelistOptions.value = await students.listPanelists(profile.value.program)
+      panelistOptions.value = await students.listPanelists()
 
       thesis.value = await students.getThesis(profile.value.stu_id)
       if (thesis.value) {
@@ -190,7 +189,7 @@ async function saveThesis() {
   // expertise, and auto-assign the panel on a match.
   isMatching.value = true
   try {
-    matchResult.value = await students.matchThesis(thesis.value.thesis_id, thesis.value.title, profile.value.program ?? '')
+    matchResult.value = await students.matchThesis(thesis.value.thesis_id, thesis.value.title)
     if (matchResult.value.panel)
       panel.value = matchResult.value.panel
   }
@@ -371,7 +370,7 @@ onMounted(loadData)
                   </option>
                 </select>
                 <p v-if="panelistOptions.length === 0" class="text-xs text-muted-foreground">
-                  No panelists are registered for your program yet — contact your chairperson.
+                  No panelists are registered yet — contact your chairperson.
                 </p>
               </div>
 

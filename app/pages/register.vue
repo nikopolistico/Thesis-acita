@@ -81,7 +81,6 @@ async function handleSubmit() {
       <div class="flex flex-col gap-2">
         <Label for="program">Program</Label>
         <Input id="program" v-model="program" type="text" required placeholder="BS Computer Science" class="h-10" />
-        <p class="text-xs text-muted-foreground">Panelists are matched within your program.</p>
       </div>
 
       <div class="flex flex-col gap-2">

@@ -36,8 +36,8 @@ export function useStudents() {
     return data
   }
 
-  async function listPanelists(program: string): Promise<PanelistOption[]> {
-    const { data, error } = await supabase.rpc('list_panelists_public', { p_program: program })
+  async function listPanelists(): Promise<PanelistOption[]> {
+    const { data, error } = await supabase.rpc('list_panelists_public')
     if (error)
       throw error
     return data ?? []
@@ -60,10 +60,10 @@ export function useStudents() {
    * semantically search panelist expertise, and auto-assign the
    * panel when a candidate clears the similarity threshold.
    */
-  async function matchThesis(thesisId: number, title: string, program: string): Promise<ThesisMatchResult> {
+  async function matchThesis(thesisId: number, title: string): Promise<ThesisMatchResult> {
     return $fetch<ThesisMatchResult>('/api/ai/match-thesis', {
       method: 'POST',
-      body: { thesisId, title, program },
+      body: { thesisId, title },
     })
   }
 

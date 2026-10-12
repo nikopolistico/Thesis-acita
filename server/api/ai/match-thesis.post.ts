@@ -5,14 +5,13 @@ const MATCH_THRESHOLD = 0.4
 interface RequestBody {
   thesisId: number
   title: string
-  program: string
 }
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<RequestBody>(event)
 
-  if (!body?.title?.trim() || !body?.thesisId || !body?.program?.trim())
-    throw createError({ statusCode: 400, statusMessage: 'thesisId, title, and program are required' })
+  if (!body?.title?.trim() || !body?.thesisId)
+    throw createError({ statusCode: 400, statusMessage: 'thesisId and title are required' })
 
   const supabase = useSupabaseAdmin()
 
@@ -24,10 +23,9 @@ export default defineEventHandler(async (event) => {
   await supabase.rpc('set_thesis_embedding', { p_thesis_id: body.thesisId, p_embedding: queryEmbedding })
 
   // 3. Semantic search: retrieve the closest panelist expertise
-  // tags in this program by cosine similarity.
+  // tags across all programs by cosine similarity.
   const { data: candidates, error: matchError } = await supabase.rpc('match_panelist_expertise', {
     p_query_embedding: queryEmbedding,
-    p_program: body.program,
     p_match_count: 10,
   })
   if (matchError)
@@ -39,7 +37,7 @@ export default defineEventHandler(async (event) => {
   const matchedAreas = [...new Set(candidateList.filter(c => c.similarity >= MATCH_THRESHOLD).map(c => c.expertise))]
   const response = isMatch
     ? `Found panelists whose tagged expertise closely matches this topic: ${matchedAreas.join(', ')}.`
-    : 'No panelists with closely matching expertise were found for this program yet.'
+    : 'No panelists with closely matching expertise were found yet.'
 
   // 4. On a good match, fill the panel from the ranked candidates.
   let panel = null

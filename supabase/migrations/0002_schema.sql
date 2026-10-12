@@ -26,11 +26,8 @@
 --      (1 chair + 2 members) from the ranked candidates.
 --   5. The student sees the panel and which expertise areas matched.
 --
--- This file is a full reset: it drops every table this schema
--- owns (including retired names from earlier versions) and
--- rebuilds everything from scratch, so it's the one and only file
--- that needs to be pasted into the Supabase SQL editor — at any
--- point during development.
+-- This file is safe to re-run: tables are created only if missing
+-- and functions are replaced, so existing data is never deleted.
 --
 -- SECURITY DEFINER: functions run with the privileges of their
 -- owner, bypassing RLS. Access control lives in the app layer
@@ -38,31 +35,11 @@
 -- ============================================================
 
 -- ============================================================
--- 0. DROP EVERYTHING (clean slate — current tables plus retired
---    names from earlier versions of this schema)
+-- 0. Retired functions only. Tables are NEVER dropped: re-running
+--    this file keeps all existing data (panelists, students, ...).
 -- ============================================================
-DROP TABLE IF EXISTS assigned_panelist CASCADE;
-DROP TABLE IF EXISTS thesis CASCADE;
-DROP TABLE IF EXISTS expertise CASCADE;
-DROP TABLE IF EXISTS panelist CASCADE;
-DROP TABLE IF EXISTS student CASCADE;
-DROP TABLE IF EXISTS program_chairperson CASCADE;
-DROP TABLE IF EXISTS notifications CASCADE;
-DROP TABLE IF EXISTS thesis_schedule CASCADE;
-DROP TABLE IF EXISTS panel_assignments CASCADE;
-DROP TABLE IF EXISTS panel_expertise CASCADE;
-DROP TABLE IF EXISTS thesis_title CASCADE;
-DROP TABLE IF EXISTS panelist_information CASCADE;
-DROP TABLE IF EXISTS student_information CASCADE;
-DROP TABLE IF EXISTS admin_information CASCADE;
-DROP TABLE IF EXISTS users_credentials CASCADE;
-DROP TABLE IF EXISTS roles CASCADE;
-
--- Functions whose argument list has changed across versions (count
--- OR just parameter types) need an explicit drop — CASCADE from the
--- table drops above only removes functions whose signature depends
--- on a dropped table's row type; these return/accept plain scalars
--- or JSONB, so they survive it.
+-- Functions whose argument list has changed across versions need an
+-- explicit drop before CREATE OR REPLACE.
 DROP FUNCTION IF EXISTS register_student(TEXT, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS register_student(TEXT, TEXT, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS login_user(TEXT, TEXT, TEXT);
@@ -93,14 +70,14 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 -- ============================================================
 -- 1. ROLES + USERS_CREDENTIALS (login/auth tables)
 -- ============================================================
-CREATE TABLE roles (
+CREATE TABLE IF NOT EXISTS roles (
     id          BIGSERIAL PRIMARY KEY,
     role_name   TEXT NOT NULL UNIQUE,      -- 'admin', 'student'
     description TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE users_credentials (
+CREATE TABLE IF NOT EXISTS users_credentials (
     id          BIGSERIAL PRIMARY KEY,
     role_id     BIGINT NOT NULL REFERENCES roles(id),
     email       TEXT NOT NULL UNIQUE,
@@ -112,7 +89,7 @@ CREATE TABLE users_credentials (
 -- ============================================================
 -- 2. STUDENT
 -- ============================================================
-CREATE TABLE student (
+CREATE TABLE IF NOT EXISTS student (
     stu_id        BIGSERIAL PRIMARY KEY,
     user_id       BIGINT NOT NULL REFERENCES users_credentials(id) ON DELETE CASCADE,
     student_name  VARCHAR(50) NOT NULL,
@@ -125,7 +102,7 @@ CREATE TABLE student (
 -- 3. PANELIST (no login of its own — managed by the
 --    chairperson)
 -- ============================================================
-CREATE TABLE panelist (
+CREATE TABLE IF NOT EXISTS panelist (
     panel_id    BIGSERIAL PRIMARY KEY,
     full_name   VARCHAR(50) NOT NULL,
     position    VARCHAR(50),
@@ -138,7 +115,7 @@ CREATE TABLE panelist (
 -- 4. EXPERTISE (tags on a panelist; expertise_embedding is what
 --    match_panelist_expertise() searches against)
 -- ============================================================
-CREATE TABLE expertise (
+CREATE TABLE IF NOT EXISTS expertise (
     exs_id                BIGSERIAL PRIMARY KEY,
     expertise             TEXT NOT NULL,
     panel_id              BIGINT NOT NULL REFERENCES panelist(panel_id) ON DELETE CASCADE,
@@ -147,7 +124,7 @@ CREATE TABLE expertise (
     UNIQUE (panel_id, expertise)
 );
 
-CREATE INDEX expertise_embedding_idx ON expertise
+CREATE INDEX IF NOT EXISTS expertise_embedding_idx ON expertise
     USING hnsw (expertise_embedding extensions.vector_cosine_ops);
 
 -- ============================================================
@@ -155,7 +132,7 @@ CREATE INDEX expertise_embedding_idx ON expertise
 --    references a real panelist record instead of a free-text
 --    name)
 -- ============================================================
-CREATE TABLE thesis (
+CREATE TABLE IF NOT EXISTS thesis (
     thesis_id       BIGSERIAL PRIMARY KEY,
     title           TEXT NOT NULL,
     link            TEXT,
@@ -168,7 +145,7 @@ CREATE TABLE thesis (
 -- ============================================================
 -- 6. ASSIGNED_PANELIST
 -- ============================================================
-CREATE TABLE assigned_panelist (
+CREATE TABLE IF NOT EXISTS assigned_panelist (
     assign_id   BIGSERIAL PRIMARY KEY,
     role        TEXT NOT NULL CHECK (role IN ('chair', 'member')),
     panel_id    BIGINT NOT NULL REFERENCES panelist(panel_id) ON DELETE CASCADE,
@@ -177,14 +154,14 @@ CREATE TABLE assigned_panelist (
     UNIQUE (thesis_id, panel_id)
 );
 
-CREATE UNIQUE INDEX assigned_panelist_one_chair_per_thesis
+CREATE UNIQUE INDEX IF NOT EXISTS assigned_panelist_one_chair_per_thesis
     ON assigned_panelist (thesis_id) WHERE role = 'chair';
 
 -- ============================================================
 -- 7. PROGRAM_CHAIRPERSON (the "admin" role — scoped to one
 --    program)
 -- ============================================================
-CREATE TABLE program_chairperson (
+CREATE TABLE IF NOT EXISTS program_chairperson (
     pgchair_id  BIGSERIAL PRIMARY KEY,
     user_id     BIGINT NOT NULL REFERENCES users_credentials(id) ON DELETE CASCADE,
     full_name   VARCHAR(50) NOT NULL,
@@ -199,7 +176,8 @@ CREATE TABLE program_chairperson (
 -- ============================================================
 INSERT INTO roles (role_name, description) VALUES
     ('admin', 'Program chairperson — reviews that program''s student submissions and panels'),
-    ('student', 'Registers and submits thesis title, link, and adviser');
+    ('student', 'Registers and submits thesis title, link, and adviser')
+ON CONFLICT (role_name) DO NOTHING;
 
 -- ============================================================
 -- AUTH
@@ -351,12 +329,11 @@ $$;
 -- ============================================================
 -- RAG: semantic search of the thesis title's embedding against
 -- every panelist's tagged expertise embeddings (cosine
--- similarity via pgvector's <=> operator), scoped to program.
+-- similarity via pgvector's <=> operator), across ALL programs.
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION match_panelist_expertise(
     p_query_embedding extensions.vector(384),
-    p_program         TEXT,
     p_match_count     INT DEFAULT 10
 ) RETURNS TABLE (
     panel_id    BIGINT,
@@ -371,13 +348,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, extensions AS $$
     FROM expertise e
     JOIN panelist p ON p.panel_id = e.panel_id
     WHERE e.expertise_embedding IS NOT NULL
-      AND lower(trim(p.program)) = lower(trim(p_program))
     ORDER BY e.expertise_embedding <=> p_query_embedding
     LIMIT p_match_count;
 $$;
 
 -- ============================================================
--- AUTOMATION: rank each program's panelists by their single best
+-- AUTOMATION: rank every panelist (any program) by their single best
 -- (lowest-distance) matching expertise tag against the thesis
 -- title's embedding, then fill chair -> member -> member from
 -- the top. Existing assignments are never touched, so calling
@@ -395,14 +371,8 @@ AS $$
 DECLARE
     v_has_chair     BOOLEAN;
     v_member_count  INT;
-    v_program       TEXT;
     v_candidate     RECORD;
 BEGIN
-    SELECT s.program INTO v_program
-    FROM thesis t
-    JOIN student s ON s.stu_id = t.stu_id
-    WHERE t.thesis_id = p_thesis_id;
-
     SELECT
         COALESCE(bool_or(role = 'chair'), FALSE),
         COALESCE(count(*) FILTER (WHERE role = 'member'), 0)
@@ -419,7 +389,6 @@ BEGIN
         FROM panelist p
         JOIN expertise e ON e.panel_id = p.panel_id
         WHERE e.expertise_embedding IS NOT NULL
-          AND lower(trim(p.program)) = lower(trim(coalesce(v_program, '')))
           AND p.panel_id NOT IN (SELECT panel_id FROM assigned_panelist WHERE thesis_id = p_thesis_id)
           AND p.panel_id IS DISTINCT FROM (SELECT adviser_id FROM thesis WHERE thesis_id = p_thesis_id)
         GROUP BY p.panel_id
@@ -505,14 +474,13 @@ $$;
 
 -- Lightweight list for the student-side adviser picker (no
 -- expertise/assignment counts needed there).
-CREATE OR REPLACE FUNCTION list_panelists_public(p_program TEXT)
+CREATE OR REPLACE FUNCTION list_panelists_public()
 RETURNS JSONB
 LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'panel_id', pl.panel_id, 'full_name', pl.full_name, 'position', pl.position
     ) ORDER BY pl.full_name), '[]'::jsonb)
-    FROM panelist pl
-    WHERE lower(trim(pl.program)) = lower(trim(p_program));
+    FROM panelist pl;
 $$;
 
 CREATE OR REPLACE FUNCTION register_panelist(
@@ -600,6 +568,7 @@ WITH new_role AS (
     INSERT INTO users_credentials (role_id, email, password)
     SELECT id, 'it.chair@carsu.edu.ph', crypt('admin16!', gen_salt('bf'))
     FROM new_role
+    ON CONFLICT (email) DO NOTHING
     RETURNING id
 )
 INSERT INTO program_chairperson (user_id, full_name, position, program, status)
