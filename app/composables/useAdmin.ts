@@ -55,8 +55,8 @@ export function useAdmin() {
     return data ?? []
   }
 
-  async function deleteStudent(stuId: number, program: string): Promise<void> {
-    const { error } = await supabase.rpc('admin_delete_student', { p_stu_id: stuId, p_program: program })
+  async function deleteThesis(stuId: number, program: string): Promise<void> {
+    const { error } = await supabase.rpc('admin_delete_thesis', { p_stu_id: stuId, p_program: program })
     if (error)
       throw error
   }
@@ -108,5 +108,5 @@ export function useAdmin() {
       throw error
   }
 
-  return { getProfile, listStudents, deleteStudent, listPanelists, registerPanelist, updatePanelist, deletePanelist, addExpertise, removeExpertise }
+  return { getProfile, listStudents, deleteThesis, listPanelists, registerPanelist, updatePanelist, deletePanelist, addExpertise, removeExpertise }
 }

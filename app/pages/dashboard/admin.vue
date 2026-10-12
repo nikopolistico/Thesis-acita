@@ -278,7 +278,7 @@ async function submitDeleteStudent() {
     return
   isDeletingStudent.value = true
   try {
-    await admin.deleteStudent(studentDeleteTarget.value.stu_id, profile.value.program)
+    await admin.deleteThesis(studentDeleteTarget.value.stu_id, profile.value.program)
     isStudentDeleteOpen.value = false
     const [studentRows, panelistRows] = await Promise.all([
       admin.listStudents(profile.value.program),
@@ -288,7 +288,7 @@ async function submitDeleteStudent() {
     panelists.value = panelistRows
   }
   catch (error: any) {
-    errorMessage.value = error?.message ?? 'Failed to delete student.'
+    errorMessage.value = error?.message ?? 'Failed to delete the submission.'
   }
   finally {
     isDeletingStudent.value = false
@@ -595,7 +595,7 @@ onMounted(loadData)
                   </ul>
                 </td>
                 <td class="px-4 py-3 text-right">
-                  <Button variant="ghost" size="icon" class="size-8 text-destructive" :aria-label="`Delete ${student.student_name}`" @click="confirmDeleteStudent(student)">
+                  <Button v-if="student.thesis_id" variant="ghost" size="icon" class="size-8 text-destructive" :aria-label="`Delete submission of ${student.student_name}`" @click="confirmDeleteStudent(student)">
                     <Trash2 class="size-4" />
                   </Button>
                 </td>
@@ -610,9 +610,9 @@ onMounted(loadData)
         <Dialog v-model:open="isStudentDeleteOpen">
           <DialogContent class="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Delete {{ studentDeleteTarget?.student_name }}?</DialogTitle>
+              <DialogTitle>Delete submission of {{ studentDeleteTarget?.student_name }}?</DialogTitle>
               <DialogDescription>
-                This removes the account, thesis and panel assignments. Their panelists become available for other students. This can't be undone.
+                This removes the thesis title, link, adviser and assigned panel. Their account stays and they can submit again. The panelists become available for other students. This can't be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
