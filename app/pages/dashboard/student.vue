@@ -74,6 +74,9 @@ const showThesisForm = computed(() => !hasThesis.value || isEditingThesis.value)
 const matchResult = ref<ThesisMatchResult | null>(null)
 const isMatching = ref(false)
 const matchError = ref('')
+const isMatchOpen = ref(false)
+const MATCH_MIN_MS = 1000
+const SUCCESS_TOAST_MS = 5000
 
 async function loadData() {
   if (!authUser.value)
@@ -166,12 +169,12 @@ async function saveThesis() {
   matchResult.value = null
   matchError.value = ''
   const previousTitle = thesis.value?.title
+  let saved: ThesisType
   try {
-    thesis.value = await students.submitThesis(profile.value.stu_id, { title, link, adviserId })
+    saved = await students.submitThesis(profile.value.stu_id, { title, link, adviserId })
+    thesis.value = saved
     successMessage.value = 'Your thesis submission has been saved.'
     isEditingThesis.value = false
-    // A changed title wipes the old panel in the DB; re-read it.
-    panel.value = await students.getPanel(thesis.value.thesis_id)
   }
   catch (error: any) {
     errorMessage.value = error?.message ?? 'Failed to save your thesis submission.'
@@ -180,26 +183,59 @@ async function saveThesis() {
   }
   isSaving.value = false
 
+  // A changed title wipes the old panel in the DB; re-read it. The save has
+  // already succeeded, so a failure here must not be reported as a failed save.
+  try {
+    panel.value = await students.getPanel(saved.thesis_id)
+  }
+  catch {
+    panel.value = []
+  }
+
   // Only re-match when the title changed or the panel is incomplete.
-  const needsMatch = previousTitle !== thesis.value.title || panel.value.length < 3
+  const needsMatch = previousTitle !== saved.title || panel.value.length < 3
   if (!needsMatch)
     return
 
   // RAG: embed the title (the query), semantically search panelist
   // expertise, and auto-assign the panel on a match.
   isMatching.value = true
+  isMatchOpen.value = true
+  // Keep the searching animation visible for at least 1s so it never flashes.
+  const minDisplay = new Promise(resolve => setTimeout(resolve, MATCH_MIN_MS))
   try {
-    matchResult.value = await students.matchThesis(thesis.value.thesis_id, thesis.value.title)
-    if (matchResult.value.panel)
-      panel.value = matchResult.value.panel
+    const [result] = await Promise.all([
+      students.matchThesis(saved.thesis_id, saved.title),
+      minDisplay,
+    ])
+    matchResult.value = result
+    if (result.panel)
+      panel.value = result.panel
   }
   catch (error: any) {
     matchError.value = error?.data?.statusMessage ?? 'Failed to match your thesis to a panel.'
   }
   finally {
     isMatching.value = false
+    isMatchOpen.value = false
   }
 }
+
+function onMatchDialogChange(open: boolean) {
+  // Don't let the dialog be dismissed mid-search.
+  if (!open && isMatching.value)
+    return
+  isMatchOpen.value = open
+}
+
+// Success toast auto-dismisses after 5 seconds.
+let successTimer: ReturnType<typeof setTimeout> | undefined
+watch(successMessage, (message) => {
+  clearTimeout(successTimer)
+  if (message)
+    successTimer = setTimeout(() => (successMessage.value = ''), SUCCESS_TOAST_MS)
+})
+onBeforeUnmount(() => clearTimeout(successTimer))
 
 async function logout() {
   authUser.value = null
@@ -280,7 +316,7 @@ onMounted(loadData)
               </Button>
             </div>
             <div class="p-5">
-              <dl v-if="hasThesis" class="space-y-4">
+              <dl v-if="thesis && hasThesis" class="space-y-4">
                 <div>
                   <dt class="text-sm text-muted-foreground">Title</dt>
                   <dd class="mt-0.5 font-heading text-lg font-semibold leading-snug text-balance">{{ thesis.title }}</dd>
@@ -343,12 +379,6 @@ onMounted(loadData)
             </CardAction>
           </CardHeader>
           <CardContent>
-            <Transition name="pop">
-            <div v-if="successMessage" class="mb-4 flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-primary">
-              <span>{{ successMessage }}</span>
-            </div>
-            </Transition>
-
             <form v-if="showThesisForm" class="space-y-4" @submit.prevent="handleSubmit">
               <div class="flex flex-col gap-2">
                 <Label for="thesis-title">Thesis title</Label>
@@ -391,7 +421,7 @@ onMounted(loadData)
               </div>
             </form>
 
-            <dl v-else-if="hasThesis" class="grid gap-4 sm:grid-cols-2">
+            <dl v-else-if="thesis && hasThesis" class="grid gap-4 sm:grid-cols-2">
               <div class="sm:col-span-2">
                 <dt class="text-sm text-muted-foreground">Thesis title</dt>
                 <dd class="mt-1 text-sm font-semibold">{{ thesis.title }}</dd>
@@ -454,35 +484,228 @@ onMounted(loadData)
           </DialogContent>
         </Dialog>
 
-        <Card v-if="isMatching || matchError || matchResult">
+        <Teleport to="body">
+          <Transition name="toast">
+            <div
+              v-if="successMessage"
+              role="status"
+              class="fixed right-4 top-4 z-100 flex w-[calc(100vw-2rem)] max-w-sm items-start gap-3 rounded-xl border bg-card p-4 shadow-lg"
+            >
+              <CheckCircle2 class="size-5 shrink-0 text-primary" />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm">
+                  {{ successMessage }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="text-muted-foreground transition hover:text-foreground"
+                aria-label="Dismiss"
+                @click="successMessage = ''"
+              >
+                &times;
+              </button>
+              <span class="toast-progress" :style="{ animationDuration: `${SUCCESS_TOAST_MS}ms` }" />
+            </div>
+          </Transition>
+        </Teleport>
+
+        <!-- Modal shows only the searching animation; it closes by itself when matching finishes. -->
+        <Dialog :open="isMatchOpen" @update:open="onMatchDialogChange">
+          <DialogContent
+            class="max-w-md [&>button]:hidden"
+            @escape-key-down="$event.preventDefault()"
+            @interact-outside="$event.preventDefault()"
+          >
+            <DialogHeader>
+              <DialogTitle class="flex items-center gap-2">
+                <Sparkles class="size-4" />
+                AI panel match
+              </DialogTitle>
+              <DialogDescription>
+                Finding panelists whose expertise fits your thesis.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div class="match-stage relative h-44 overflow-hidden rounded-lg border bg-muted/40">
+              <span class="match-pulse" />
+              <span class="match-pulse match-pulse-delay" />
+              <div class="match-core">
+                <Sparkles class="size-5" />
+              </div>
+              <span
+                v-for="n in 6"
+                :key="n"
+                class="match-avatar"
+                :class="`match-avatar-${n}`"
+              >
+                <UserRound class="size-4" />
+              </span>
+            </div>
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 class="size-4 animate-spin" />
+              Searching for panelists...
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <!-- Organized result lives on the page, not in the modal. -->
+        <Card v-if="matchError || matchResult">
           <CardHeader>
-            <CardTitle class="flex items-center gap-1.5 text-base">
-              <Sparkles class="size-4" />
+            <CardTitle class="flex items-center gap-2 text-base">
+              <AlertCircle v-if="matchError" class="size-5 text-destructive" />
+              <CheckCircle2 v-else class="match-done size-5 text-primary" />
               AI panel match
             </CardTitle>
           </CardHeader>
-          <CardContent class="space-y-3">
-            <div v-if="isMatching" class="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 class="size-4 animate-spin" />
-              Searching for panelists whose expertise fits this thesis...
-            </div>
-            <div v-else-if="matchError" class="flex items-start gap-2 text-sm text-destructive">
-              <AlertCircle class="mt-0.5 size-4 shrink-0" />
+          <CardContent>
+            <div v-if="matchError" class="flex items-start gap-2 text-sm text-destructive">
               <span>{{ matchError }}</span>
             </div>
-            <template v-else-if="matchResult">
-              <div class="flex flex-wrap gap-1.5">
-                <Badge v-for="c in matchResult.candidates" :key="c.expertise" variant="secondary">
-                  {{ c.expertise }} ({{ (c.similarity * 100).toFixed(0) }}%)
-                </Badge>
+            <div v-else-if="matchResult" class="match-results space-y-4">
+              <div v-if="matchResult.panel?.length" class="space-y-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Assigned panel
+                </h3>
+                <PanelList :panel="matchResult.panel" />
               </div>
-              <p class="text-sm text-muted-foreground">
-                {{ matchResult.response }}
+
+              <div v-if="matchResult.candidates.length" class="space-y-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Matched expertise
+                </h3>
+                <div class="flex flex-wrap gap-1.5">
+                  <Badge v-for="c in matchResult.candidates" :key="c.expertise" variant="secondary">
+                    {{ c.expertise }} · {{ (c.similarity * 100).toFixed(0) }}%
+                  </Badge>
+                </div>
+              </div>
+
+              <div v-if="matchResult.response" class="space-y-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Summary
+                </h3>
+                <p class="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  {{ matchResult.response }}
+                </p>
+              </div>
+              <p v-if="!matchResult.panel?.length" class="text-sm text-muted-foreground">
+                No panel could be assigned from the available expertise.
               </p>
-            </template>
+            </div>
           </CardContent>
         </Card>
       </section>
     </template>
   </DashboardSidebar>
 </template>
+
+<style scoped>
+.match-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: -1.375rem 0 0 -1.375rem;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  z-index: 2;
+  animation: match-bob 1.6s ease-in-out infinite;
+}
+
+.match-pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: -1.375rem 0 0 -1.375rem;
+  border-radius: 9999px;
+  border: 2px solid var(--primary);
+  opacity: 0;
+  animation: match-pulse 2.4s ease-out infinite;
+}
+.match-pulse-delay { animation-delay: 1.2s; }
+
+.match-avatar {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+  animation: match-roam 5s ease-in-out infinite;
+}
+
+/* each avatar wanders its own path at its own pace */
+.match-avatar-1 { left: 8%;  top: 15%; animation-duration: 4.6s; }
+.match-avatar-2 { left: 80%; top: 12%; animation-duration: 5.4s; animation-delay: -1s; }
+.match-avatar-3 { left: 18%; top: 62%; animation-duration: 6s;   animation-delay: -2s; }
+.match-avatar-4 { left: 72%; top: 64%; animation-duration: 4.9s; animation-delay: -3s; }
+.match-avatar-5 { left: 42%; top: 6%;  animation-duration: 5.7s; animation-delay: -0.5s; }
+.match-avatar-6 { left: 55%; top: 74%; animation-duration: 6.3s; animation-delay: -4s; }
+
+@keyframes match-roam {
+  0%   { transform: translate(0, 0) scale(1); }
+  25%  { transform: translate(26px, 14px) scale(1.08); color: var(--primary); }
+  50%  { transform: translate(-14px, 28px) scale(0.95); }
+  75%  { transform: translate(-28px, -10px) scale(1.06); color: var(--primary); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes match-bob {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.12); }
+}
+
+@keyframes match-pulse {
+  0%   { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(4.5); opacity: 0; }
+}
+
+/* results fade in one block after another, check icon pops */
+.match-results > * { animation: match-rise 0.4s ease-out both; }
+.match-results > *:nth-child(2) { animation-delay: 0.1s; }
+.match-results > *:nth-child(3) { animation-delay: 0.2s; }
+.match-done { animation: match-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+@keyframes match-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes match-pop {
+  from { transform: scale(0); }
+  to   { transform: scale(1); }
+}
+
+/* success toast */
+.toast-enter-active, .toast-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(16px); }
+.toast-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  border-radius: 0 0 0.75rem 0.75rem;
+  background: var(--primary);
+  transform-origin: left;
+  animation: toast-countdown 5s linear forwards; /* overridden inline from SUCCESS_TOAST_MS */
+}
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-avatar, .match-core, .match-pulse, .match-results > *, .match-done, .toast-progress { animation: none; }
+}
+</style>
